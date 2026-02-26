@@ -5,11 +5,13 @@ import { DownloadTrackUseCase } from "../use-cases/tracks/download-track.use-cas
 import { GetTracksUseCase } from "../use-cases/tracks/get-tracks.use-case";
 import { RetryTrackDownloadUseCase } from "../use-cases/tracks/retry-track-download.use-case";
 import { SearchTrackOnYoutubeUseCase } from "../use-cases/tracks/search-track-on-youtube.use-case";
+import { SearchTrackUseCase } from "../use-cases/tracks/search-track.use-case";
 import { UpdateTrackUseCase } from "../use-cases/tracks/update-track.use-case";
 
 export interface TrackServiceDependencies {
   // Use Cases
   searchTrackOnYoutubeUseCase: SearchTrackOnYoutubeUseCase;
+  searchTrackUseCase: SearchTrackUseCase;
   downloadTrackUseCase: DownloadTrackUseCase;
   createTrackUseCase: CreateTrackUseCase;
   deleteTrackUseCase: DeleteTrackUseCase;
@@ -20,6 +22,7 @@ export interface TrackServiceDependencies {
 
 export class TrackService {
   private readonly searchTrackOnYoutubeUseCase: SearchTrackOnYoutubeUseCase;
+  private readonly searchTrackUseCase: SearchTrackUseCase;
   private readonly downloadTrackUseCase: DownloadTrackUseCase;
   private readonly createTrackUseCase: CreateTrackUseCase;
   private readonly deleteTrackUseCase: DeleteTrackUseCase;
@@ -29,6 +32,7 @@ export class TrackService {
 
   constructor(deps: TrackServiceDependencies) {
     this.searchTrackOnYoutubeUseCase = deps.searchTrackOnYoutubeUseCase;
+    this.searchTrackUseCase = deps.searchTrackUseCase;
     this.downloadTrackUseCase = deps.downloadTrackUseCase;
     this.createTrackUseCase = deps.createTrackUseCase;
     this.deleteTrackUseCase = deps.deleteTrackUseCase;
@@ -65,8 +69,18 @@ export class TrackService {
     return this.retryTrackDownloadUseCase.execute(id);
   }
 
+  /**
+   * Search for a track on YouTube only (backward compatibility)
+   */
   async findOnYoutube(track: ITrack): Promise<void> {
     return this.searchTrackOnYoutubeUseCase.execute(track);
+  }
+
+  /**
+   * Search for a track across multiple sources (SoundCloud, YouTube)
+   */
+  async findTrack(track: ITrack): Promise<void> {
+    return this.searchTrackUseCase.execute(track);
   }
 
   async downloadFromYoutube(track: ITrack): Promise<void> {

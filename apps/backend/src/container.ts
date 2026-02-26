@@ -23,6 +23,7 @@ import { GetTracksUseCase } from "./application/use-cases/tracks/get-tracks.use-
 import { RescueStuckTracksUseCase } from "./application/use-cases/tracks/rescue-stuck-tracks.use-case";
 import { RetryTrackDownloadUseCase } from "./application/use-cases/tracks/retry-track-download.use-case";
 import { SearchTrackOnYoutubeUseCase } from "./application/use-cases/tracks/search-track-on-youtube.use-case";
+import { SearchTrackUseCase } from "./application/use-cases/tracks/search-track.use-case";
 import { UpdateTrackUseCase } from "./application/use-cases/tracks/update-track.use-case";
 import { SpotifyService } from "./domain/services/spotify.service";
 import { PrismaHistoryRepository } from "./infrastructure/database/prisma-history.repository";
@@ -31,6 +32,8 @@ import { PrismaSettingsRepository } from "./infrastructure/database/prisma-setti
 import { PrismaTrackRepository } from "./infrastructure/database/prisma-track.repository";
 import { SpotifyAlbumClient } from "./infrastructure/external/spotify-album.client";
 import { SpotifyArtistClient } from "./infrastructure/external/spotify-artist.client";
+import { MultiSourceDownloadService } from "./infrastructure/external/multi-source-download.service";
+import { MultiSourceSearchService } from "./infrastructure/external/multi-source-search.service";
 import { SpotifyAuthService } from "./infrastructure/external/spotify-auth.service";
 import { SpotifyPlaylistClient } from "./infrastructure/external/spotify-playlist.client";
 import { SpotifySearchClient } from "./infrastructure/external/spotify-search.client";
@@ -69,6 +72,19 @@ const trackFileHelper = new FileSystemTrackPathService(settingsService);
 const m3uService = new FileSystemM3uService(settingsService, trackFileHelper);
 const youtubeSearchService = new YoutubeSearchService(settingsService);
 const youtubeDownloadService = new YoutubeDownloadService(settingsService, youtubeSearchService);
+
+// Multi-source search and download services
+const multiSourceSearchService = new MultiSourceSearchService(
+  settingsService,
+  youtubeSearchService,
+  youtubeSearchService.getYtDlpPath(),
+);
+const multiSourceDownloadService = new MultiSourceDownloadService(
+  settingsService,
+  youtubeSearchService,
+  youtubeDownloadService,
+);
+
 const metadataService = new MetadataService();
 
 const queueService = new BullMqTrackQueueService();
@@ -127,6 +143,8 @@ const createTrackUseCase = new CreateTrackUseCase(trackRepository, queueService)
 const deleteTrackUseCase = new DeleteTrackUseCase(trackRepository);
 const getTracksUseCase = new GetTracksUseCase(trackRepository);
 const updateTrackUseCase = new UpdateTrackUseCase(trackRepository);
+
+// Keep old YouTube search use case for backward compatibility
 const searchTrackOnYoutubeUseCase = new SearchTrackOnYoutubeUseCase(
   trackRepository,
   youtubeSearchService,
@@ -134,14 +152,26 @@ const searchTrackOnYoutubeUseCase = new SearchTrackOnYoutubeUseCase(
   queueService,
   eventBus,
 );
+
+// New multi-source search use case
+const searchTrackUseCase = new SearchTrackUseCase(
+  trackRepository,
+  multiSourceSearchService,
+  settingsService,
+  queueService,
+  eventBus,
+);
+
 const retryTrackDownloadUseCase = new RetryTrackDownloadUseCase(trackRepository, queueService);
 const rescueStuckTracksUseCase = new RescueStuckTracksUseCase(
   trackRepository,
   retryTrackDownloadUseCase,
 );
+
+// Use new multi-source download service
 const downloadTrackUseCase = new DownloadTrackUseCase(
   trackRepository,
-  youtubeDownloadService,
+  multiSourceDownloadService,
   trackFileHelper,
   playlistRepository,
   historyRepository,
@@ -152,6 +182,7 @@ const downloadTrackUseCase = new DownloadTrackUseCase(
 // Domain Services (Track)
 const trackService = new TrackService({
   searchTrackOnYoutubeUseCase,
+  searchTrackUseCase,
   downloadTrackUseCase,
   createTrackUseCase,
   deleteTrackUseCase,

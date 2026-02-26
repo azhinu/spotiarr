@@ -27,6 +27,12 @@ export class Track {
   get trackUrl() {
     return this.props.trackUrl;
   }
+  get sourceUrl() {
+    return this.props.sourceUrl;
+  }
+  get source() {
+    return this.props.source;
+  }
 
   markAsDownloading() {
     if (this.props.status === TrackStatusEnum.Completed) {
@@ -48,6 +54,21 @@ export class Track {
 
   markAsQueued(youtubeUrl: string) {
     this.props.youtubeUrl = youtubeUrl;
+    this.props.status = TrackStatusEnum.Queued;
+  }
+
+  /**
+   * Mark track as queued with multi-source support
+   * Stores both the URL and the source it came from
+   */
+  markAsQueuedWithSource(
+    url: string,
+    source: "soundcloud" | "youtube",
+  ) {
+    this.props.sourceUrl = url;
+    this.props.source = source;
+    // Also set youtubeUrl for backward compatibility
+    this.props.youtubeUrl = url;
     this.props.status = TrackStatusEnum.Queued;
   }
 

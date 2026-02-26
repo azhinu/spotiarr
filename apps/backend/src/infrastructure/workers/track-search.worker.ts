@@ -24,7 +24,8 @@ export async function createTrackSearchWorker() {
     async (job) => {
       const track: ITrack = job.data;
       try {
-        await trackService.findOnYoutube(track);
+        // Use multi-source search instead of YouTube-only search
+        await trackService.findTrack(track);
       } catch (error) {
         // If YouTube is rate-limited, delay this job by 3-15 minutes instead of failing
         if (error instanceof YoutubeRateLimitError) {

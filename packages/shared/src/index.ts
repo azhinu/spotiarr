@@ -78,6 +78,8 @@ export interface ITrack {
   durationMs?: number;
   artists?: TrackArtist[];
   youtubeUrl?: string;
+  sourceUrl?: string;
+  source?: "soundcloud" | "youtube";
   status?: TrackStatusEnum;
   error?: string;
   createdAt?: number;
@@ -132,6 +134,13 @@ export type ApiErrorCode =
   | "playlist_not_found"
   | "playlist_already_exists"
   | "track_not_found"
+  | "track_not_found_any_source"
+  | "soundcloud_track_not_found"
+  | "soundcloud_rate_limited"
+  | "soundcloud_unavailable"
+  | "soundcloud_network_error"
+  | "invalid_soundcloud_url"
+  | "no_download_url"
   | "internal_server_error"
   | "failed_to_fetch_artist_detail"
   | "failed_to_fetch_followed_artists";

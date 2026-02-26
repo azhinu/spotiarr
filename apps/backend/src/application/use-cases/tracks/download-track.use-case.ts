@@ -7,7 +7,7 @@ import { EventBus } from "@/domain/events/event-bus";
 import { HistoryRepository } from "@/domain/repositories/history.repository";
 import { PlaylistRepository } from "@/domain/repositories/playlist.repository";
 import { TrackRepository } from "@/domain/repositories/track.repository";
-import { YoutubeDownloadService } from "@/infrastructure/external/youtube-download.service";
+import { MultiSourceDownloadService } from "@/infrastructure/external/multi-source-download.service";
 import { FileSystemTrackPathService } from "@/infrastructure/services/file-system-track-path.service";
 import { getErrorMessage } from "@/infrastructure/utils/error.utils";
 import { TrackPostProcessingService } from "../../services/track-post-processing.service";
@@ -15,7 +15,7 @@ import { TrackPostProcessingService } from "../../services/track-post-processing
 export class DownloadTrackUseCase {
   constructor(
     private readonly trackRepository: TrackRepository,
-    private readonly youtubeDownloadService: YoutubeDownloadService,
+    private readonly multiSourceDownloadService: MultiSourceDownloadService,
     private readonly trackFileHelper: FileSystemTrackPathService,
     private readonly playlistRepository: PlaylistRepository,
     private readonly downloadHistoryRepository: HistoryRepository,
@@ -115,7 +115,7 @@ export class DownloadTrackUseCase {
     }
 
     // 1. Download Content
-    await this.youtubeDownloadService.downloadAndFormat(track, trackFilePath);
+    await this.multiSourceDownloadService.downloadAndFormat(track, trackFilePath);
 
     // 2. Post-Processing (Metadata, Covers, M3U)
     // Delegated to dedicated service to keep Use Case clean

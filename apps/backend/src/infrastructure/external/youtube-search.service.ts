@@ -74,19 +74,70 @@ export class YoutubeSearchService {
   }
 
   /**
-   * Check if error is a rate limit error
+   * Classify error type for better debugging
    */
-  private isRateLimitError(error: unknown): boolean {
+  private classifyError(
+    error: unknown,
+  ): { type: string; status?: string; message: string } {
     const errorStr =
       (error as { stderr?: string; message?: string }).stderr ||
       (error as Error).message ||
       String(error);
-    return (
+
+    // Rate limit errors
+    if (
+      errorStr.includes("rate-limited by YouTube") ||
       errorStr.includes("rate-limited") ||
-      errorStr.includes("rate limited") ||
+      errorStr.includes("429")
+    ) {
+      return { type: "RATE_LIMITED", status: "429", message: "YouTube rate limited (429)" };
+    }
+
+    // HTTP Status codes
+    if (errorStr.includes("403")) {
+      return { type: "FORBIDDEN", status: "403", message: "Access forbidden (403)" };
+    }
+    if (errorStr.includes("404")) {
+      return { type: "NOT_FOUND", status: "404", message: "Video not found (404)" };
+    }
+    if (errorStr.includes("502")) {
+      return { type: "BAD_GATEWAY", status: "502", message: "YouTube gateway error (502)" };
+    }
+    if (errorStr.includes("503")) {
+      return { type: "SERVICE_UNAVAILABLE", status: "503", message: "YouTube unavailable (503)" };
+    }
+
+    // Content availability
+    if (
       errorStr.includes("This content isn't available") ||
-      errorStr.includes("Video unavailable")
-    );
+      errorStr.includes("Video unavailable") ||
+      errorStr.includes("not available")
+    ) {
+      return { type: "CONTENT_UNAVAILABLE", message: "Video content is unavailable" };
+    }
+
+    // Network errors
+    if (
+      errorStr.includes("Connection") ||
+      errorStr.includes("timeout") ||
+      errorStr.includes("ECONNREFUSED")
+    ) {
+      return { type: "NETWORK_ERROR", message: "Network error: Cannot connect to YouTube" };
+    }
+    if (errorStr.includes("ENOTFOUND") || errorStr.includes("getaddrinfo")) {
+      return { type: "DNS_ERROR", message: "DNS error: Cannot resolve YouTube domain" };
+    }
+
+    // Unknown error
+    return { type: "UNKNOWN", message: errorStr.substring(0, 200) };
+  }
+
+  /**
+   * Check if error is a rate limit error
+   */
+  private isRateLimitError(error: unknown): boolean {
+    const errorClassification = this.classifyError(error);
+    return errorClassification.type === "RATE_LIMITED";
   }
 
   /**
