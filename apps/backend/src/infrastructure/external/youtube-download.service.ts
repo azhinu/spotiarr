@@ -2,6 +2,8 @@ import { SUPPORTED_AUDIO_FORMATS, SupportedAudioFormat, type ITrack } from "@spo
 import { YtDlp } from "ytdlp-nodejs";
 import { SettingsService } from "@/application/services/settings.service";
 import { AppError } from "@/domain/errors/app-error";
+import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
+import { YoutubeRateLimitService } from "./youtube-rate-limit.service";
 import { YoutubeSearchService } from "./youtube-search.service";
 
 const HEADERS = {
@@ -10,16 +12,30 @@ const HEADERS = {
 };
 
 export class YoutubeDownloadService {
+  private readonly rateLimitService: YoutubeRateLimitService;
+
   constructor(
     private readonly settingsService: SettingsService,
     private readonly searchService: YoutubeSearchService,
-  ) {}
+  ) {
+    this.rateLimitService = new YoutubeRateLimitService();
+  }
 
   async downloadAndFormat(track: ITrack, output: string): Promise<void> {
     console.debug(`Downloading ${track.artist} - ${track.name} (${track.youtubeUrl}) from YT`);
     if (!track.youtubeUrl) {
       console.error("youtubeUrl is null or undefined");
       throw new AppError(400, "internal_server_error", "youtubeUrl is null or undefined");
+    }
+
+    // Check if YouTube is currently rate-limited
+    const isRateLimited = await this.rateLimitService.isRateLimited();
+    if (isRateLimited) {
+      const blockUntil = await this.rateLimitService.getRateLimitUntil();
+      const message = blockUntil
+        ? `YouTube is rate-limited until ${new Date(blockUntil).toISOString()}`
+        : "YouTube is currently rate-limited";
+      throw new YoutubeRateLimitError(message);
     }
 
     const ytdlp = new YtDlp({
@@ -46,17 +62,51 @@ export class YoutubeDownloadService {
     const ytCookies = await this.settingsService.getString("YT_COOKIES");
     const isCookieFile = ytCookies && (ytCookies.includes("/") || ytCookies.endsWith(".txt"));
 
-    await ytdlp.downloadAsync(track.youtubeUrl, {
-      format: {
-        filter: "audioonly",
-        type: formatType,
-        quality,
-      },
-      output,
-      cookies: isCookieFile ? ytCookies : undefined,
-      cookiesFromBrowser: !isCookieFile && ytCookies ? ytCookies : undefined,
-      headers: HEADERS,
-    });
-    console.debug(`Downloaded ${track.artist} - ${track.name} to ${output}`);
+    try {
+      await ytdlp.downloadAsync(track.youtubeUrl, {
+        format: {
+          filter: "audioonly",
+          type: formatType,
+          quality,
+        },
+        output,
+        cookies: isCookieFile ? ytCookies : undefined,
+        cookiesFromBrowser: !isCookieFile && ytCookies ? ytCookies : undefined,
+        headers: HEADERS,
+      });
+      console.debug(`Downloaded ${track.artist} - ${track.name} to ${output}`);
+    } catch (error) {
+      // Check if this is a YouTube rate-limit error
+      const errorMessage = this.getErrorMessage(error);
+      if (this.isRateLimitError(errorMessage)) {
+        console.error(
+          `[YoutubeDownloadService] YouTube rate-limiting detected: ${errorMessage}`,
+        );
+        await this.rateLimitService.setRateLimited();
+        const blockedUntil = await this.rateLimitService.getRateLimitUntil();
+        const untilTime = blockedUntil ? new Date(blockedUntil).toISOString() : "unknown";
+        throw new YoutubeRateLimitError(`YouTube rate-limited - paused until ${untilTime}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Extract error message from various error types
+   */
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
+  }
+
+  /**
+   * Check if error message indicates YouTube rate-limiting
+   */
+  private isRateLimitError(message: string): boolean {
+    return message.includes("rate-limited by YouTube") ||
+      message.includes("rate limit") ||
+      message.includes("rate-limit");
   }
 }

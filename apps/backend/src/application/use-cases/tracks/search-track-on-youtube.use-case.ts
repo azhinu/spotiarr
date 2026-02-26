@@ -1,5 +1,6 @@
 import { TrackStatusEnum, type ITrack } from "@spotiarr/shared";
 import { EventBus } from "@/domain/events/event-bus";
+import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
 import { TrackRepository } from "@/domain/repositories/track.repository";
 import type { TrackQueueService } from "@/domain/services/track-queue.service";
 import { YoutubeSearchService } from "@/infrastructure/external/youtube-search.service";
@@ -35,6 +36,11 @@ export class SearchTrackOnYoutubeUseCase {
       );
       existingTrack.markAsQueued(youtubeUrl);
     } catch (error) {
+      // Re-throw YouTube rate limit errors to be handled by worker
+      if (error instanceof YoutubeRateLimitError) {
+        throw error;
+      }
+
       console.error(
         `Failed to find track on YouTube: ${existingTrack.artist} - ${existingTrack.name}`,
         error instanceof Error ? error.stack : String(error),

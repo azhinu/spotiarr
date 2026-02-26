@@ -5,6 +5,8 @@ import { join } from "path";
 import { promisify } from "util";
 import { SettingsService } from "@/application/services/settings.service";
 import { AppError } from "@/domain/errors/app-error";
+import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
+import { YoutubeRateLimitService } from "./youtube-rate-limit.service";
 
 const execFilePromise = promisify(execFile);
 
@@ -16,8 +18,10 @@ const HEADERS = {
 export class YoutubeSearchService {
   private readonly ytDlpPath: string;
   private lastSearchTime: number = 0;
+  private readonly rateLimitService: YoutubeRateLimitService;
 
   constructor(private readonly settingsService: SettingsService) {
+    this.rateLimitService = new YoutubeRateLimitService();
     // Auto-detect yt-dlp path from system PATH
     try {
       const systemPath = execSync("which yt-dlp", {
@@ -109,14 +113,25 @@ export class YoutubeSearchService {
       }
 
       // Check if it's a rate limit error
-      if (this.isRateLimitError(error) && retryCount < maxRetries) {
-        // Exponential backoff: 5s, 15s, 45s
-        const backoffMs = 5000 * Math.pow(3, retryCount);
-        console.warn(
-          `Rate limit detected. Retry ${retryCount + 1}/${maxRetries} after ${backoffMs / 1000}s`,
-        );
-        await this.sleep(backoffMs);
-        return this.executeSearch(args, retryCount + 1, maxRetries);
+      if (this.isRateLimitError(error)) {
+        if (retryCount < maxRetries) {
+          // Exponential backoff: 4s, 12s, 36s
+          const backoffMs = 4000 * Math.pow(3, retryCount);
+          console.warn(
+            `Rate limit detected. Retry ${retryCount + 1}/${maxRetries} after ${backoffMs / 1000}s`,
+          );
+          await this.sleep(backoffMs);
+          return this.executeSearch(args, retryCount + 1, maxRetries);
+        } else {
+          // Max retries exhausted - set random rate limit block (3-15 minutes)
+          console.error("[YoutubeSearchService] YouTube rate limit detected after max retries!");
+          await this.rateLimitService.setRateLimited();
+          const blockedUntil = await this.rateLimitService.getRateLimitUntil();
+          const untilTime = blockedUntil ? new Date(blockedUntil).toISOString() : "unknown";
+          throw new YoutubeRateLimitError(
+            `YouTube rate-limited - paused until ${untilTime}`,
+          );
+        }
       }
 
       throw error;

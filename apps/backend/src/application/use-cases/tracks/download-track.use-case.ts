@@ -2,6 +2,7 @@ import { type ITrack } from "@spotiarr/shared";
 import * as fs from "fs";
 import * as path from "path";
 import { AppError } from "@/domain/errors/app-error";
+import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
 import { EventBus } from "@/domain/events/event-bus";
 import { HistoryRepository } from "@/domain/repositories/history.repository";
 import { PlaylistRepository } from "@/domain/repositories/playlist.repository";
@@ -44,6 +45,11 @@ export class DownloadTrackUseCase {
     try {
       await this.downloadAndProcessTrack(track.toPrimitive());
     } catch (err) {
+      // Re-throw YouTube rate limit errors to be handled by worker
+      if (err instanceof YoutubeRateLimitError) {
+        throw err;
+      }
+
       console.error(
         `Failed to download track: ${track.artist} - ${track.name}`,
         getErrorMessage(err),
