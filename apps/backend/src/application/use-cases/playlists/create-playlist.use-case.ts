@@ -1,4 +1,4 @@
-import { NormalizedTrack, PlaylistTypeEnum, type IPlaylist } from "@spotiarr/shared";
+import { NormalizedTrack, PlaylistTypeEnum, TrackStatusEnum, type IPlaylist } from "@spotiarr/shared";
 import { Playlist } from "@/domain/entities/playlist.entity";
 import { AppError } from "@/domain/errors/app-error";
 import { EventBus } from "@/domain/events/event-bus";
@@ -30,13 +30,16 @@ export class CreatePlaylistUseCase {
     const existing = await this.playlistRepository.findAll(false, {
       spotifyUrl: playlistData.spotifyUrl,
     });
+
+    // Use existing playlist if it exists, otherwise create new one
+    let playlist: Playlist;
     if (existing.length > 0) {
-      throw new AppError(409, "playlist_already_exists");
+      playlist = existing[0];
+    } else {
+      playlist = new Playlist(playlistData);
     }
 
     let detail: PlaylistDetail | undefined;
-
-    const playlist = new Playlist(playlistData);
 
     try {
       detail = await this.spotifyService.getPlaylistDetail(playlist.spotifyUrl);
@@ -80,7 +83,20 @@ export class CreatePlaylistUseCase {
       playlist.markAsError(error instanceof Error ? error.message : String(error));
     }
 
-    const savedPlaylistEntity = await this.playlistRepository.save(playlist);
+    // Save or update playlist
+    let savedPlaylistEntity;
+    if (playlist.id) {
+      // Update existing playlist
+      await this.playlistRepository.update(playlist.id, playlist);
+      const updated = await this.playlistRepository.findOne(playlist.id);
+      if (!updated) {
+        throw new AppError(500, "internal_server_error", "Failed to update playlist");
+      }
+      savedPlaylistEntity = updated;
+    } else {
+      // Save new playlist
+      savedPlaylistEntity = await this.playlistRepository.save(playlist);
+    }
     const savedPlaylist = savedPlaylistEntity.toPrimitive();
 
     if (detail?.tracks && detail.tracks.length > 0) {
@@ -109,11 +125,19 @@ export class CreatePlaylistUseCase {
       playlistName: playlist.name ?? "Unknown Playlist",
     };
 
+    // Get existing tracks in playlist to avoid duplicates
+    const existingTracks = await this.trackService.getAllByPlaylist(playlist.id);
+    const existingTrackMap = new Map(
+      existingTracks.map((t) => [`${t.artist}|${t.name}`, t] as const)
+    );
+
     const BATCH_SIZE = 10;
     for (let i = 0; i < tracks.length; i += BATCH_SIZE) {
       const batch = tracks.slice(i, i + BATCH_SIZE);
       const results = await Promise.all(
-        batch.map((track, index) => this.processTrack(track, i + index, context)),
+        batch.map((track, index) => 
+          this.processTrack(track, i + index, context, existingTrackMap)
+        ),
       );
 
       for (const result of results) {
@@ -142,6 +166,7 @@ export class CreatePlaylistUseCase {
       playlistId: string;
       playlistName: string;
     },
+    existingTrackMap: Map<string, any>,
   ): Promise<"ok" | "skipped" | "error"> {
     try {
       if (!track.artist || !track.name) {
@@ -159,8 +184,24 @@ export class CreatePlaylistUseCase {
           ? track.primaryArtist
           : track.artist;
 
-      const useSinglesFallback = context.isTrack || context.isArtist;
+      const trackKey = `${artistToUse}|${track.name}`;
+      const existingTrack = existingTrackMap.get(trackKey);
 
+      // Check if track already exists
+      if (existingTrack) {
+        // Skip only if track is already completed
+        if (existingTrack.status === TrackStatusEnum.Completed) {
+          console.debug(`Track already completed, skipping: ${artistToUse} - ${track.name}`);
+          return "skipped";
+        }
+        // For failed tracks, re-queue them
+        console.debug(`Re-queuing track with status ${existingTrack.status}: ${artistToUse} - ${track.name}`);
+        await this.trackService.findTrack(existingTrack);
+        return "ok";
+      }
+
+      // Create new track
+      const useSinglesFallback = context.isTrack || context.isArtist;
       const trackNumber = track.trackNumber ?? index + 1;
 
       await this.trackService.create({

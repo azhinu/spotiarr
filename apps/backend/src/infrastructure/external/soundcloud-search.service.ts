@@ -10,9 +10,20 @@ const HEADERS = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
 
+const MIN_BLOCK_MS = 5 * 1000; // 5 seconds
+const MAX_BLOCK_MS = 15 * 1000; // 15 seconds
+
+let rateLimitBlockedUntil: number | null = null;
+let rateLimitRetryCount = 0;
+
+function getRandomBlockDuration(): number {
+  return MIN_BLOCK_MS + Math.floor(Math.random() * (MAX_BLOCK_MS - MIN_BLOCK_MS));
+}
+
 export class SoundCloudSearchService {
   private readonly ytDlpPath: string;
   private lastSearchTime: number = 0;
+  private rateLimitQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly settingsService: SettingsService, ytDlpPath: string) {
     this.ytDlpPath = ytDlpPath;
@@ -29,19 +40,60 @@ export class SoundCloudSearchService {
    * Enforce rate limiting by ensuring minimum delay between searches
    */
   private async enforceRateLimit(): Promise<void> {
-    const delayMs = await this.settingsService.getNumber("YT_SEARCH_DELAY_MS");
-    const minDelay = delayMs || 1000; // Default 1 second
+    this.rateLimitQueue = this.rateLimitQueue
+      .then(async () => {
+        await this.waitForRateLimitBlock();
 
-    const now = Date.now();
-    const timeSinceLastSearch = now - this.lastSearchTime;
+        const delayMs = await this.settingsService.getNumber("YT_SEARCH_DELAY_MS");
+        const minDelay = delayMs || 1000; // Default 1 second
 
-    if (timeSinceLastSearch < minDelay) {
-      const waitTime = minDelay - timeSinceLastSearch;
-      console.debug(`Rate limiting SoundCloud search: waiting ${waitTime}ms`);
-      await this.sleep(waitTime);
+        const now = Date.now();
+        const timeSinceLastSearch = now - this.lastSearchTime;
+
+        if (timeSinceLastSearch < minDelay) {
+          const waitTime = minDelay - timeSinceLastSearch;
+          console.debug(`Rate limiting SoundCloud search: waiting ${waitTime}ms`);
+          await this.sleep(waitTime);
+        }
+
+        this.lastSearchTime = Date.now();
+      })
+      .catch(() => undefined);
+
+    await this.rateLimitQueue;
+  }
+
+  private async waitForRateLimitBlock(): Promise<void> {
+    if (rateLimitBlockedUntil === null) {
+      return;
     }
 
-    this.lastSearchTime = Date.now();
+    const now = Date.now();
+    if (now >= rateLimitBlockedUntil) {
+      rateLimitBlockedUntil = null;
+      rateLimitRetryCount = 0;
+      return;
+    }
+
+    const waitTime = rateLimitBlockedUntil - now;
+    console.warn(
+      `[SoundCloudSearchService] Rate limited. Waiting ${waitTime}ms until ${new Date(rateLimitBlockedUntil).toISOString()}`,
+    );
+    await this.sleep(waitTime);
+  }
+
+  private markRateLimited(): void {
+    const blockDuration = getRandomBlockDuration() * Math.pow(2, rateLimitRetryCount);
+    rateLimitBlockedUntil = Date.now() + blockDuration;
+    const durationSeconds = Math.round(blockDuration / 1000);
+    rateLimitRetryCount += 1;
+    console.warn(
+      `[SoundCloudSearchService] SoundCloud rate limited. Blocked for ${durationSeconds} seconds until ${new Date(rateLimitBlockedUntil).toISOString()}`,
+    );
+  }
+
+  private clearRateLimitBackoff(): void {
+    rateLimitRetryCount = 0;
   }
 
   /**
@@ -169,6 +221,7 @@ export class SoundCloudSearchService {
         console.info(
           `[SoundCloudSearchService] ✓ SUCCESS: Found on SoundCloud - ${soundcloudUrl}`,
         );
+        this.clearRateLimitBackoff();
         return soundcloudUrl;
       }
 
@@ -193,6 +246,7 @@ export class SoundCloudSearchService {
 
       // Depending on error type, provide more context
       if (errorClassification.type === "RATE_LIMITED") {
+        this.markRateLimited();
         throw new AppError(
           429,
           "soundcloud_rate_limited",
