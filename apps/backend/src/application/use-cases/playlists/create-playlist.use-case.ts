@@ -1,4 +1,10 @@
-import { NormalizedTrack, PlaylistTypeEnum, TrackStatusEnum, type IPlaylist } from "@spotiarr/shared";
+import {
+  NormalizedTrack,
+  PlaylistTypeEnum,
+  TrackStatusEnum,
+  type IPlaylist,
+  type ITrack,
+} from "@spotiarr/shared";
 import { Playlist } from "@/domain/entities/playlist.entity";
 import { AppError } from "@/domain/errors/app-error";
 import { EventBus } from "@/domain/events/event-bus";
@@ -128,15 +134,33 @@ export class CreatePlaylistUseCase {
     // Get existing tracks in playlist to avoid duplicates
     const existingTracks = await this.trackService.getAllByPlaylist(playlist.id);
     const existingTrackMap = new Map(
-      existingTracks.map((t) => [`${t.artist}|${t.name}`, t] as const)
+      existingTracks.map((t) => [this.buildBaseTrackKey(t.artist, t.name), t] as const)
     );
+
+    const completedTracks = await this.trackService.getAll({ status: TrackStatusEnum.Completed });
+    const completedTrackMap = new Map<string, ITrack>();
+    for (const completedTrack of completedTracks) {
+      const fullKey = this.buildFullTrackKey(
+        completedTrack.artist,
+        completedTrack.name,
+        completedTrack.album,
+      );
+      if (!completedTrackMap.has(fullKey)) {
+        completedTrackMap.set(fullKey, completedTrack);
+      }
+
+      const baseKey = this.buildBaseTrackKey(completedTrack.artist, completedTrack.name);
+      if (!completedTrackMap.has(baseKey)) {
+        completedTrackMap.set(baseKey, completedTrack);
+      }
+    }
 
     const BATCH_SIZE = 10;
     for (let i = 0; i < tracks.length; i += BATCH_SIZE) {
       const batch = tracks.slice(i, i + BATCH_SIZE);
       const results = await Promise.all(
         batch.map((track, index) => 
-          this.processTrack(track, i + index, context, existingTrackMap)
+          this.processTrack(track, i + index, context, existingTrackMap, completedTrackMap)
         ),
       );
 
@@ -167,6 +191,7 @@ export class CreatePlaylistUseCase {
       playlistName: string;
     },
     existingTrackMap: Map<string, any>,
+    completedTrackMap: Map<string, ITrack>,
   ): Promise<"ok" | "skipped" | "error"> {
     try {
       if (!track.artist || !track.name) {
@@ -184,7 +209,7 @@ export class CreatePlaylistUseCase {
           ? track.primaryArtist
           : track.artist;
 
-      const trackKey = `${artistToUse}|${track.name}`;
+      const trackKey = this.buildBaseTrackKey(artistToUse, track.name);
       const existingTrack = existingTrackMap.get(trackKey);
 
       // Check if track already exists
@@ -200,14 +225,43 @@ export class CreatePlaylistUseCase {
         return "ok";
       }
 
-      // Create new track
       const useSinglesFallback = context.isTrack || context.isArtist;
+      const albumToUse = track.album ?? (useSinglesFallback ? "Singles" : context.playlistName);
+      const libraryTrackFullKey = this.buildFullTrackKey(artistToUse, track.name, albumToUse);
+      const libraryTrackBaseKey = this.buildBaseTrackKey(artistToUse, track.name);
+      const existingLibraryTrack =
+        completedTrackMap.get(libraryTrackFullKey) ?? completedTrackMap.get(libraryTrackBaseKey);
+
+      // Create new track
       const trackNumber = track.trackNumber ?? index + 1;
+
+      if (existingLibraryTrack) {
+        await this.trackService.create({
+          artist: artistToUse,
+          name: track.name,
+          album: albumToUse,
+          albumYear: track.albumYear,
+          trackNumber,
+          spotifyUrl: track.previewUrl ?? undefined,
+          artists: track.artists,
+          trackUrl: track.trackUrl,
+          albumUrl: track.albumUrl,
+          durationMs: track.durationMs ?? existingLibraryTrack.durationMs,
+          playlistId: context.playlistId,
+          playlistIndex: index + 1,
+          status: TrackStatusEnum.Completed,
+          completedAt: Date.now(),
+          error: undefined,
+        });
+
+        console.debug(`Track found in library metadata, marking completed: ${artistToUse} - ${track.name}`);
+        return "ok";
+      }
 
       await this.trackService.create({
         artist: artistToUse,
         name: track.name,
-        album: track.album ?? (useSinglesFallback ? "Singles" : context.playlistName),
+        album: albumToUse,
         albumYear: track.albumYear,
         trackNumber: trackNumber,
         spotifyUrl: track.previewUrl ?? undefined,
@@ -226,5 +280,17 @@ export class CreatePlaylistUseCase {
       );
       return "error";
     }
+  }
+
+  private buildBaseTrackKey(artist: string, name: string): string {
+    return `${this.normalizeKeyPart(artist)}|${this.normalizeKeyPart(name)}`;
+  }
+
+  private buildFullTrackKey(artist: string, name: string, album?: string): string {
+    return `${this.normalizeKeyPart(artist)}|${this.normalizeKeyPart(name)}|${this.normalizeKeyPart(album || "")}`;
+  }
+
+  private normalizeKeyPart(value: string): string {
+    return (value || "").trim().toLocaleLowerCase();
   }
 }

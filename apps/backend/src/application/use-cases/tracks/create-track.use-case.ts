@@ -1,4 +1,4 @@
-import type { ITrack } from "@spotiarr/shared";
+import { TrackStatusEnum, type ITrack } from "@spotiarr/shared";
 import type { TrackRepository } from "@/domain/repositories/track.repository";
 import type { TrackQueueService } from "@/domain/services/track-queue.service";
 
@@ -10,6 +10,12 @@ export class CreateTrackUseCase {
 
   async execute(track: Partial<ITrack>): Promise<void> {
     const savedTrack = await this.trackRepository.save(track as ITrack);
-    await this.queueService.enqueueSearchTrack(savedTrack.toPrimitive());
+    const persisted = savedTrack.toPrimitive();
+
+    if (persisted.status === TrackStatusEnum.Completed) {
+      return;
+    }
+
+    await this.queueService.enqueueSearchTrack(persisted);
   }
 }

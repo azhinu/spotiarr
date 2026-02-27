@@ -54,31 +54,33 @@ export class FileSystemTrackPathService {
     return text.replace(/[/\\?%*:|"<>]/g, "-");
   }
 
-  async getTrackFileName(track: ITrack, playlistName?: string): Promise<string> {
+  /**
+   * Get the full path for the actual track file (always in Artist/Album structure)
+   */
+  async getTrackFileName(track: ITrack): Promise<string> {
     const format = await this.settingsService.getString("FORMAT");
     const trackName = track.name || "Unknown Track";
-    const trackNumber = track.trackNumber ?? 1;
     const artistName = track.artist || "Unknown Artist";
     const albumName = track.album || "Unknown Album";
 
-    if (playlistName) {
-      const numberToUse = track.playlistIndex ?? track.trackNumber ?? 1;
-      const paddedNumber = String(numberToUse).padStart(2, "0");
-      const safeArtist = this.stripFileIllegalChars(artistName);
-      const safeTrack = this.stripFileIllegalChars(trackName);
-      const fileName = `${paddedNumber} - ${safeArtist} - ${safeTrack}.${format}`;
-      return resolve(this.getPlaylistFolderPath(playlistName), fileName);
-    }
-
-    const paddedNumber = String(trackNumber).padStart(2, "0");
-    const discPrefix = track.discNumber && track.discNumber > 1 ? `${track.discNumber}-` : "";
-    const fileName = `${discPrefix}${paddedNumber} - ${this.stripFileIllegalChars(
-      trackName,
-    )}.${format}`;
+    const fileName = `${this.stripFileIllegalChars(trackName)}.${format}`;
     return resolve(this.getAlbumFolderPath(artistName, albumName), fileName);
   }
 
-  async getFolderName(track: ITrack, playlistName?: string): Promise<string> {
-    return this.getTrackFileName(track, playlistName);
+  /**
+   * Get the symlink path for a track in a playlist folder
+   */
+  async getPlaylistSymlinkPath(track: ITrack, playlistName: string): Promise<string> {
+    const format = await this.settingsService.getString("FORMAT");
+    const trackName = track.name || "Unknown Track";
+    const artistName = track.artist || "Unknown Artist";
+    const safeArtist = this.stripFileIllegalChars(artistName);
+    const safeTrack = this.stripFileIllegalChars(trackName);
+    const fileName = `${safeArtist} - ${safeTrack}.${format}`;
+    return resolve(this.getPlaylistFolderPath(playlistName), fileName);
+  }
+
+  async getFolderName(track: ITrack): Promise<string> {
+    return this.getTrackFileName(track);
   }
 }

@@ -13,6 +13,13 @@
 
 This is a fork of [SpotiArr](https://github.com/mralexsaavedra/spotiarr) with SoundCloud integration and a cooldown mechanism. No additional config required. See SpotiArr for details.
 
+### Changes:
+
+- First try downloading from SoundCloud then YouTube.
+- Rate limiting error handling
+- Music from playlists downloading in Artist/Album structure instead of Playlists
+- Sync your local library with SpotyArr's database
+
 
 
 [![License](https://img.shields.io/github/license/mralexsaavedra/spotiarr)](LICENSE)

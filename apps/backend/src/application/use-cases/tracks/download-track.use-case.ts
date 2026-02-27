@@ -96,17 +96,8 @@ export class DownloadTrackUseCase {
   }
 
   private async downloadAndProcessTrack(track: ITrack): Promise<void> {
-    let playlistName: string | undefined;
-
-    if (track.playlistId) {
-      const playlist = await this.playlistRepository.findOne(track.playlistId);
-      // Check if it's strictly a playlist (not artist or album download)
-      if (playlist && playlist.type === "playlist") {
-        playlistName = playlist.name;
-      }
-    }
-
-    const trackFilePath = await this.trackFileHelper.getFolderName(track, playlistName);
+    // Always download to Artist/Album directory structure
+    const trackFilePath = await this.trackFileHelper.getFolderName(track);
     const trackDirectory = path.dirname(trackFilePath);
 
     // Create directory structure
@@ -120,5 +111,49 @@ export class DownloadTrackUseCase {
     // 2. Post-Processing (Metadata, Covers, M3U)
     // Delegated to dedicated service to keep Use Case clean
     await this.trackPostProcessingService.process(track, trackFilePath);
+
+    // 3. Create symlink in playlist folder if this is a playlist download
+    if (track.playlistId) {
+      const playlist = await this.playlistRepository.findOne(track.playlistId);
+      // Check if it's strictly a playlist (not artist or album download)
+      if (playlist && playlist.type === "playlist" && playlist.name) {
+        await this.createPlaylistSymlink(track, trackFilePath, playlist.name);
+      }
+    }
+  }
+
+  private async createPlaylistSymlink(
+    track: ITrack,
+    targetPath: string,
+    playlistName: string,
+  ): Promise<void> {
+    try {
+      const symlinkPath = await this.trackFileHelper.getPlaylistSymlinkPath(track, playlistName);
+      const symlinkDirectory = path.dirname(symlinkPath);
+
+      // Create playlist directory if it doesn't exist
+      if (!fs.existsSync(symlinkDirectory)) {
+        fs.mkdirSync(symlinkDirectory, { recursive: true });
+      }
+
+      // Remove existing symlink if it exists
+      if (fs.existsSync(symlinkPath)) {
+        fs.unlinkSync(symlinkPath);
+      }
+
+      // Create symlink (relative path for portability)
+      const relativePath = path.relative(symlinkDirectory, targetPath);
+      fs.symlinkSync(relativePath, symlinkPath);
+
+      console.log(
+        `Created symlink for playlist "${playlistName}": ${symlinkPath} -> ${targetPath}`,
+      );
+    } catch (err) {
+      console.error(
+        `Failed to create symlink for track in playlist "${playlistName}":`,
+        getErrorMessage(err),
+      );
+      // Don't throw - symlink creation is not critical for download success
+    }
   }
 }

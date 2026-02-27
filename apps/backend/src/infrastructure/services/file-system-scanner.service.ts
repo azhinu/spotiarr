@@ -162,13 +162,39 @@ export class FileSystemScannerService {
       const stats = await fs.stat(filePath);
       const ext = path.extname(fileName).toLowerCase().slice(1);
 
-      // Parse track info from filename
-      const { trackNumber, discNumber, name } = this.parseFileName(fileName);
+      // Parse track info from filename (fallback when metadata is missing)
+      const parsedFromFileName = this.parseFileName(fileName);
+      let trackNumber = parsedFromFileName.trackNumber;
+      let discNumber = parsedFromFileName.discNumber;
+      let trackTitle = parsedFromFileName.name;
+      let trackArtist = artistName;
+      let trackAlbum = albumName;
 
       let duration: number | undefined = undefined;
       try {
         const mm = await import("music-metadata");
         const metadata = await mm.parseFile(filePath, { duration: true, skipCovers: true });
+
+        if (metadata.common?.title?.trim()) {
+          trackTitle = metadata.common.title.trim();
+        }
+
+        if (metadata.common?.artist?.trim()) {
+          trackArtist = metadata.common.artist.trim();
+        }
+
+        if (metadata.common?.album?.trim()) {
+          trackAlbum = metadata.common.album.trim();
+        }
+
+        if (metadata.common?.track?.no && metadata.common.track.no > 0) {
+          trackNumber = metadata.common.track.no;
+        }
+
+        if (metadata.common?.disk?.no && metadata.common.disk.no > 0) {
+          discNumber = metadata.common.disk.no;
+        }
+
         if (metadata.format?.duration) {
           duration = Math.round(metadata.format.duration);
         }
@@ -181,9 +207,9 @@ export class FileSystemScannerService {
         filePath,
         trackNumber,
         discNumber,
-        name: name || fileName,
-        artist: artistName,
-        album: albumName,
+        name: trackTitle || fileName,
+        artist: trackArtist,
+        album: trackAlbum,
         format: ext,
         size: stats.size,
         duration,

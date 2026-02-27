@@ -76,10 +76,13 @@ export class FileSystemM3uService {
       // Additional metadata (optional)
       lines.push(`#EXTART:${track.artist}`);
 
-      // Get the accurate filename using the centralized service
-      // This ensures it matches exactly what is on disk (using playlistIndex logic)
-      const fullPath = await this.trackPathService.getTrackFileName(track, playlist.name);
-      const fileName = path.basename(fullPath);
+      // Get the symlink filename in the playlist folder
+      // This ensures the M3U references the files in the playlist directory
+      const symlinkPath = await this.trackPathService.getPlaylistSymlinkPath(
+        track,
+        playlist.name || "Unknown Playlist",
+      );
+      const fileName = path.basename(symlinkPath);
 
       lines.push(fileName);
 

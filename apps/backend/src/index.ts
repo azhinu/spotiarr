@@ -63,6 +63,16 @@ async function bootstrap() {
   // Create HTTP server
   const server = http.createServer(app);
 
+  // Sync library with DB at startup (background, non-blocking)
+  (async () => {
+    try {
+      console.log("🔄 Running library sync on startup...");
+      await container.libraryService.scan();
+    } catch (error) {
+      console.error("⚠️ Startup library sync failed:", error);
+    }
+  })();
+
   // Start scheduled jobs
   startScheduledJobs();
 
