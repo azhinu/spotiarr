@@ -3,7 +3,7 @@ import { YtDlp } from "ytdlp-nodejs";
 import { SettingsService } from "@/application/services/settings.service";
 import { AppError } from "@/domain/errors/app-error";
 import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
-import { YoutubeRateLimitService } from "./youtube-rate-limit.service";
+import { RateLimitService } from "./rate-limit.service";
 import { YoutubeSearchService } from "./youtube-search.service";
 
 const HEADERS = {
@@ -15,14 +15,30 @@ const HEADERS = {
  * SoundCloudDownloadService - Downloads audio from SoundCloud URLs using yt-dlp
  */
 export class SoundCloudDownloadService {
+  private readonly serviceKey = "soundcloud:download" as const;
+
   constructor(
     private readonly settingsService: SettingsService,
     private readonly ytDlpPath: string,
+    private readonly rateLimitService: RateLimitService,
   ) {}
 
   async downloadAndFormat(track: ITrack, output: string): Promise<void> {
     if (!track.sourceUrl || !track.sourceUrl.includes("soundcloud.com")) {
       throw new AppError(400, "invalid_soundcloud_url", "Invalid SoundCloud URL");
+    }
+
+    // Check if SoundCloud is currently rate-limited
+    const isBlocked = await this.rateLimitService.isBlocked(this.serviceKey);
+    if (isBlocked) {
+      const blockedUntil = await this.rateLimitService.getBlockedUntil(this.serviceKey);
+      const message = blockedUntil
+        ? `SoundCloud download is rate-limited until ${new Date(blockedUntil).toISOString()}`
+        : "SoundCloud download is currently rate-limited";
+      console.warn(
+        `[SoundCloudDownloadService] ${message}. Cannot download: ${track.artist} - ${track.name}`,
+      );
+      throw new AppError(429, "soundcloud_rate_limited", message);
     }
 
     const ytdlp = new YtDlp({
@@ -54,12 +70,42 @@ export class SoundCloudDownloadService {
         output,
         headers: HEADERS,
       });
-      console.debug(
-        `Downloaded ${track.artist} - ${track.name} from SoundCloud to ${output}`,
+      console.info(
+        `[SoundCloudDownloadService] ✓ SUCCESS: Downloaded ${track.artist} - ${track.name} from SoundCloud to ${output}`,
       );
     } catch (error) {
       const errorMessage = this.getErrorMessage(error);
-      console.error(`[SoundCloudDownloadService] Failed to download: ${errorMessage}`);
+      console.error(
+        `[SoundCloudDownloadService] ✗ FAILED: Download error for ${track.artist} - ${track.name}: ${errorMessage}`,
+      );
+
+      // Check for rate-limit errors
+      if (errorMessage.includes("429") || errorMessage.includes("rate-limit")) {
+        console.error(`[SoundCloudDownloadService] 🔴 RATE_LIMITED (429): ${errorMessage}`);
+        await this.rateLimitService.setBlocked(this.serviceKey, "RATE_LIMIT_429");
+        throw new AppError(
+          429,
+          "soundcloud_rate_limited",
+          "SoundCloud rate limited. Please try again later.",
+        );
+      }
+
+      // Check for connection/auth errors
+      if (
+        errorMessage.includes("403") ||
+        errorMessage.includes("Connection") ||
+        errorMessage.includes("timeout")
+      ) {
+        console.error(`[SoundCloudDownloadService] 🔴 CONNECTION_ERROR/403: ${errorMessage}`);
+        await this.rateLimitService.setBlocked(this.serviceKey, "FORBIDDEN_403");
+        throw new AppError(
+          403,
+          "soundcloud_forbidden",
+          "SoundCloud access denied. Service paused.",
+        );
+      }
+
+      console.error(`[SoundCloudDownloadService] 🔴 UNKNOWN_ERROR: ${errorMessage}`);
       throw error;
     }
   }
@@ -78,16 +124,19 @@ export class SoundCloudDownloadService {
  */
 export class MultiSourceDownloadService {
   private readonly soundcloudDownloadService: SoundCloudDownloadService;
-  private readonly rateLimitService: YoutubeRateLimitService;
 
   constructor(
     private readonly settingsService: SettingsService,
     private readonly youtubeSearchService: YoutubeSearchService,
     private readonly youtubeDownloadService: any, // Use existing YoutubeDownloadService
+    private readonly rateLimitService: RateLimitService,
   ) {
     const ytDlpPath = youtubeSearchService.getYtDlpPath();
-    this.soundcloudDownloadService = new SoundCloudDownloadService(settingsService, ytDlpPath);
-    this.rateLimitService = new YoutubeRateLimitService();
+    this.soundcloudDownloadService = new SoundCloudDownloadService(
+      settingsService,
+      ytDlpPath,
+      rateLimitService,
+    );
   }
 
   /**
@@ -117,11 +166,39 @@ export class MultiSourceDownloadService {
 
     const { service, source } = this.getDownloadService(urlToUse);
 
-    console.debug(`Downloading ${track.artist} - ${track.name} from ${source}`);
+    // Check rate limit status before attempting download
+    const scKey = source === "SoundCloud" ? ("soundcloud:download" as const) : ("youtube:download" as const);
+    const isBlocked = await this.rateLimitService.isBlocked(scKey);
+    if (isBlocked) {
+      const blockedUntil = await this.rateLimitService.getBlockedUntil(scKey);
+      const message = blockedUntil
+        ? `${source} is rate-limited until ${new Date(blockedUntil).toISOString()}`
+        : `${source} is currently rate-limited`;
+      console.warn(
+        `[MultiSourceDownloadService] ${message}. Cannot download: ${track.artist} - ${track.name}`,
+      );
+      throw new AppError(
+        429,
+        source === "SoundCloud" ? "soundcloud_rate_limited" : "internal_server_error",
+        message,
+      );
+    }
+
+    console.info(
+      `[MultiSourceDownloadService] Downloading ${track.artist} - ${track.name} from ${source} (URL: ${urlToUse})`,
+    );
 
     // For YouTube, use the existing download service method
     if (source === "YouTube") {
-      return this.youtubeDownloadService.downloadAndFormat(track, output);
+      try {
+        return await this.youtubeDownloadService.downloadAndFormat(track, output);
+      } catch (error) {
+        console.error(
+          `[MultiSourceDownloadService] YouTube download failed for ${track.artist} - ${track.name}:`,
+          error instanceof Error ? error.message : String(error),
+        );
+        throw error;
+      }
     }
 
     // For other sources, we need to set sourceUrl if it's not already
@@ -130,6 +207,14 @@ export class MultiSourceDownloadService {
       sourceUrl: urlToUse,
     };
 
-    return service.downloadAndFormat(trackForDownload, output);
+    try {
+      return await service.downloadAndFormat(trackForDownload, output);
+    } catch (error) {
+      console.error(
+        `[MultiSourceDownloadService] ${source} download failed for ${track.artist} - ${track.name}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
   }
 }

@@ -39,10 +39,6 @@ export class SearchTrackUseCase {
         existingTrack.name,
       );
 
-      console.info(
-        `[SearchTrackUseCase] Found ${existingTrack.artist} - ${existingTrack.name} on ${searchResult.source}`,
-      );
-
       // Mark as queued with source information
       existingTrack.markAsQueuedWithSource(searchResult.url, searchResult.source);
     } catch (error) {

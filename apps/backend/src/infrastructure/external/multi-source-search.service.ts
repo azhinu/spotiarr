@@ -1,6 +1,7 @@
 import { SettingsService } from "@/application/services/settings.service";
 import { AppError } from "@/domain/errors/app-error";
 import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
+import { RateLimitService } from "./rate-limit.service";
 import { SoundCloudSearchService } from "./soundcloud-search.service";
 import { YoutubeSearchService } from "./youtube-search.service";
 
@@ -23,9 +24,14 @@ export class MultiSourceSearchService {
     private readonly settingsService: SettingsService,
     youtubeSearchService: YoutubeSearchService,
     ytDlpPath: string,
+    private readonly rateLimitService: RateLimitService,
   ) {
     this.youtubeSearchService = youtubeSearchService;
-    this.soundcloudSearchService = new SoundCloudSearchService(settingsService, ytDlpPath);
+    this.soundcloudSearchService = new SoundCloudSearchService(
+      settingsService,
+      ytDlpPath,
+      rateLimitService,
+    );
   }
 
   /**

@@ -24,10 +24,17 @@ export async function createTrackDownloadWorker() {
     "track-download-processor",
     async (job) => {
       const track: ITrack = job.data;
+      console.log(
+        `[TrackDownloadWorker] Starting download job ${job.id} for: ${track.artist} - ${track.name}`,
+      );
       // Rate limit is handled natively by BullMQ now using the limiter option below
       try {
         await trackService.downloadFromYoutube(track);
       } catch (error) {
+        console.error(
+          `[TrackDownloadWorker] Download failed for ${track.artist} - ${track.name}:`,
+          error instanceof Error ? error.message : String(error),
+        );
         // If YouTube is rate-limited, delay this job by 3-15 minutes instead of failing
         if (error instanceof YoutubeRateLimitError) {
           const delayMs = getRandomDelay();

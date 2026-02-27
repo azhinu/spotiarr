@@ -137,6 +137,7 @@ export type ApiErrorCode =
   | "track_not_found_any_source"
   | "soundcloud_track_not_found"
   | "soundcloud_rate_limited"
+  | "soundcloud_forbidden"
   | "soundcloud_unavailable"
   | "soundcloud_network_error"
   | "invalid_soundcloud_url"

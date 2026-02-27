@@ -2,6 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { SettingsService } from "@/application/services/settings.service";
 import { AppError } from "@/domain/errors/app-error";
+import { RateLimitService, type ErrorType } from "./rate-limit.service";
 
 const execFilePromise = promisify(execFile);
 
@@ -10,22 +11,17 @@ const HEADERS = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
 
-const MIN_BLOCK_MS = 5 * 1000; // 5 seconds
-const MAX_BLOCK_MS = 15 * 1000; // 15 seconds
-
-let rateLimitBlockedUntil: number | null = null;
-let rateLimitRetryCount = 0;
-
-function getRandomBlockDuration(): number {
-  return MIN_BLOCK_MS + Math.floor(Math.random() * (MAX_BLOCK_MS - MIN_BLOCK_MS));
-}
-
 export class SoundCloudSearchService {
   private readonly ytDlpPath: string;
   private lastSearchTime: number = 0;
   private rateLimitQueue: Promise<void> = Promise.resolve();
+  private readonly serviceKey = "soundcloud:search" as const;
 
-  constructor(private readonly settingsService: SettingsService, ytDlpPath: string) {
+  constructor(
+    private readonly settingsService: SettingsService,
+    ytDlpPath: string,
+    private readonly rateLimitService: RateLimitService,
+  ) {
     this.ytDlpPath = ytDlpPath;
   }
 
@@ -47,11 +43,15 @@ export class SoundCloudSearchService {
         const delayMs = await this.settingsService.getNumber("YT_SEARCH_DELAY_MS");
         const minDelay = delayMs || 1000; // Default 1 second
 
+        // Apply random multiplier (0.5 to 1.5)
+        const multiplier = 0.5 + Math.random() * 1.0;
+        const adjustedDelay = Math.round(minDelay * multiplier);
+
         const now = Date.now();
         const timeSinceLastSearch = now - this.lastSearchTime;
 
-        if (timeSinceLastSearch < minDelay) {
-          const waitTime = minDelay - timeSinceLastSearch;
+        if (timeSinceLastSearch < adjustedDelay) {
+          const waitTime = adjustedDelay - timeSinceLastSearch;
           console.debug(`Rate limiting SoundCloud search: waiting ${waitTime}ms`);
           await this.sleep(waitTime);
         }
@@ -64,36 +64,18 @@ export class SoundCloudSearchService {
   }
 
   private async waitForRateLimitBlock(): Promise<void> {
-    if (rateLimitBlockedUntil === null) {
+    const isBlocked = await this.rateLimitService.isBlocked(this.serviceKey);
+    if (!isBlocked) {
       return;
     }
 
-    const now = Date.now();
-    if (now >= rateLimitBlockedUntil) {
-      rateLimitBlockedUntil = null;
-      rateLimitRetryCount = 0;
-      return;
+    const remainingTime = await this.rateLimitService.getRemainingTime(this.serviceKey);
+    if (remainingTime && remainingTime > 0) {
+      console.warn(
+        `[SoundCloudSearchService] Rate limited. Waiting ${remainingTime}ms before continuing...`,
+      );
+      await this.sleep(remainingTime);
     }
-
-    const waitTime = rateLimitBlockedUntil - now;
-    console.warn(
-      `[SoundCloudSearchService] Rate limited. Waiting ${waitTime}ms until ${new Date(rateLimitBlockedUntil).toISOString()}`,
-    );
-    await this.sleep(waitTime);
-  }
-
-  private markRateLimited(): void {
-    const blockDuration = getRandomBlockDuration() * Math.pow(2, rateLimitRetryCount);
-    rateLimitBlockedUntil = Date.now() + blockDuration;
-    const durationSeconds = Math.round(blockDuration / 1000);
-    rateLimitRetryCount += 1;
-    console.warn(
-      `[SoundCloudSearchService] SoundCloud rate limited. Blocked for ${durationSeconds} seconds until ${new Date(rateLimitBlockedUntil).toISOString()}`,
-    );
-  }
-
-  private clearRateLimitBackoff(): void {
-    rateLimitRetryCount = 0;
   }
 
   /**
@@ -118,7 +100,7 @@ export class SoundCloudSearchService {
    */
   private classifyError(
     error: unknown,
-  ): { type: string; status?: string; message: string } {
+  ): { type: string; status?: string; message: string; errorType?: ErrorType } {
     const errorStr =
       (error as { stderr?: string; message?: string }).stderr ||
       (error as Error).message ||
@@ -129,7 +111,12 @@ export class SoundCloudSearchService {
       return { type: "NOT_FOUND", status: "404", message: "Track not found (404)" };
     }
     if (errorStr.includes("429")) {
-      return { type: "RATE_LIMITED", status: "429", message: "Rate limited by SoundCloud (429)" };
+      return {
+        type: "RATE_LIMITED",
+        status: "429",
+        message: "Rate limited by SoundCloud (429)",
+        errorType: "RATE_LIMIT_429",
+      };
     }
     if (errorStr.includes("502")) {
       return { type: "BAD_GATEWAY", status: "502", message: "SoundCloud gateway error (502)" };
@@ -142,7 +129,12 @@ export class SoundCloudSearchService {
       };
     }
     if (errorStr.includes("403")) {
-      return { type: "FORBIDDEN", status: "403", message: "Access forbidden by SoundCloud (403)" };
+      return {
+        type: "FORBIDDEN",
+        status: "403",
+        message: "Access forbidden by SoundCloud (403)",
+        errorType: "FORBIDDEN_403",
+      };
     }
     if (errorStr.includes("401")) {
       return { type: "UNAUTHORIZED", status: "401", message: "Unauthorized access (401)" };
@@ -154,14 +146,22 @@ export class SoundCloudSearchService {
       errorStr.includes("timeout") ||
       errorStr.includes("ECONNREFUSED")
     ) {
-      return { type: "NETWORK_ERROR", message: "Network error: Cannot connect to SoundCloud" };
+      return {
+        type: "NETWORK_ERROR",
+        message: "Network error: Cannot connect to SoundCloud",
+        errorType: "CONNECTION_TIMEOUT",
+      };
     }
     if (
       errorStr.includes("ENOTFOUND") ||
       errorStr.includes("getaddrinfo") ||
       errorStr.includes("ERR_DNS")
     ) {
-      return { type: "DNS_ERROR", message: "DNS error: Cannot resolve SoundCloud domain" };
+      return {
+        type: "DNS_ERROR",
+        message: "DNS error: Cannot resolve SoundCloud domain",
+        errorType: "CONNECTION_TIMEOUT",
+      };
     }
 
     // Service-specific errors
@@ -177,7 +177,17 @@ export class SoundCloudSearchService {
   }
 
   async findTrackUrl(artist: string, name: string): Promise<string> {
-    console.debug(`Searching ${artist} - ${name} on SoundCloud`);
+
+    // Check if SoundCloud is currently rate-limited
+    const isBlocked = await this.rateLimitService.isBlocked(this.serviceKey);
+    if (isBlocked) {
+      const blockedUntil = await this.rateLimitService.getBlockedUntil(this.serviceKey);
+      const message = blockedUntil
+        ? `SoundCloud search is rate-limited until ${new Date(blockedUntil).toISOString()}`
+        : "SoundCloud search is currently rate-limited";
+      console.warn(`[SoundCloudSearchService] ${message}. Cannot search for "${artist} - ${name}"`);
+      throw new AppError(429, "soundcloud_rate_limited", message);
+    }
 
     // Enforce rate limiting before making the request
     await this.enforceRateLimit();
@@ -198,7 +208,6 @@ export class SoundCloudSearchService {
     ];
 
     try {
-      console.debug(`[SoundCloudSearchService] Executing: yt-dlp ${args.join(" ")}`);
       const { stdout, stderr } = await execFilePromise(this.ytDlpPath, args);
 
       if (stderr) {
@@ -218,10 +227,6 @@ export class SoundCloudSearchService {
       const soundcloudUrl = urls.find((u) => u.includes("soundcloud.com"));
 
       if (soundcloudUrl) {
-        console.info(
-          `[SoundCloudSearchService] ✓ SUCCESS: Found on SoundCloud - ${soundcloudUrl}`,
-        );
-        this.clearRateLimitBackoff();
         return soundcloudUrl;
       }
 
@@ -244,13 +249,30 @@ export class SoundCloudSearchService {
         `[SoundCloudSearchService] Full error: ${error instanceof Error ? error.stack : String(error)}`,
       );
 
-      // Depending on error type, provide more context
+      // Depending on error type, set rate limit and provide more context
       if (errorClassification.type === "RATE_LIMITED") {
-        this.markRateLimited();
+        await this.rateLimitService.setBlocked(this.serviceKey, "RATE_LIMIT_429");
         throw new AppError(
           429,
           "soundcloud_rate_limited",
           "SoundCloud rate limited. Please try again later.",
+        );
+      } else if (errorClassification.type === "FORBIDDEN") {
+        await this.rateLimitService.setBlocked(this.serviceKey, "FORBIDDEN_403");
+        throw new AppError(
+          403,
+          "soundcloud_forbidden",
+          "Access forbidden by SoundCloud. Service paused.",
+        );
+      } else if (
+        errorClassification.type === "NETWORK_ERROR" ||
+        errorClassification.type === "DNS_ERROR"
+      ) {
+        await this.rateLimitService.setBlocked(this.serviceKey, "CONNECTION_TIMEOUT");
+        throw new AppError(
+          503,
+          "soundcloud_network_error",
+          "Cannot reach SoundCloud. Check your network connection.",
         );
       } else if (
         errorClassification.type === "SERVICE_UNAVAILABLE" ||
@@ -260,15 +282,6 @@ export class SoundCloudSearchService {
           503,
           "soundcloud_unavailable",
           "SoundCloud service is currently unavailable.",
-        );
-      } else if (
-        errorClassification.type === "NETWORK_ERROR" ||
-        errorClassification.type === "DNS_ERROR"
-      ) {
-        throw new AppError(
-          503,
-          "soundcloud_network_error",
-          "Cannot reach SoundCloud. Check your network connection.",
         );
       }
 

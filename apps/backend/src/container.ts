@@ -34,6 +34,7 @@ import { SpotifyAlbumClient } from "./infrastructure/external/spotify-album.clie
 import { SpotifyArtistClient } from "./infrastructure/external/spotify-artist.client";
 import { MultiSourceDownloadService } from "./infrastructure/external/multi-source-download.service";
 import { MultiSourceSearchService } from "./infrastructure/external/multi-source-search.service";
+import { RateLimitService } from "./infrastructure/external/rate-limit.service";
 import { SpotifyAuthService } from "./infrastructure/external/spotify-auth.service";
 import { SpotifyPlaylistClient } from "./infrastructure/external/spotify-playlist.client";
 import { SpotifySearchClient } from "./infrastructure/external/spotify-search.client";
@@ -68,21 +69,30 @@ const settingsRepository = new PrismaSettingsRepository();
 // Services (Base)
 const settingsService = new SettingsService(settingsRepository);
 
+// Rate limit service - shared across all sources
+const rateLimitService = new RateLimitService();
+
 const trackFileHelper = new FileSystemTrackPathService(settingsService);
 const m3uService = new FileSystemM3uService(settingsService, trackFileHelper);
-const youtubeSearchService = new YoutubeSearchService(settingsService);
-const youtubeDownloadService = new YoutubeDownloadService(settingsService, youtubeSearchService);
+const youtubeSearchService = new YoutubeSearchService(settingsService, rateLimitService);
+const youtubeDownloadService = new YoutubeDownloadService(
+  settingsService,
+  youtubeSearchService,
+  rateLimitService,
+);
 
 // Multi-source search and download services
 const multiSourceSearchService = new MultiSourceSearchService(
   settingsService,
   youtubeSearchService,
   youtubeSearchService.getYtDlpPath(),
+  rateLimitService,
 );
 const multiSourceDownloadService = new MultiSourceDownloadService(
   settingsService,
   youtubeSearchService,
   youtubeDownloadService,
+  rateLimitService,
 );
 
 const metadataService = new MetadataService();
@@ -313,4 +323,5 @@ export const container = {
   trackPostProcessingService,
   rescueStuckTracksUseCase,
   libraryService,
+  rateLimitService,
 };

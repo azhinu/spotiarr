@@ -110,7 +110,9 @@ export class DownloadTrackUseCase {
 
     // 2. Post-Processing (Metadata, Covers, M3U)
     // Delegated to dedicated service to keep Use Case clean
+    console.debug(`[DownloadTrackUseCase] Starting post-processing for ${track.artist} - ${track.name}`);
     await this.trackPostProcessingService.process(track, trackFilePath);
+    console.debug(`[DownloadTrackUseCase] Post-processing completed for ${track.artist} - ${track.name}`);
 
     // 3. Create symlink in playlist folder if this is a playlist download
     if (track.playlistId) {

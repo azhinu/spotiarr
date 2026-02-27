@@ -6,7 +6,7 @@ import { promisify } from "util";
 import { SettingsService } from "@/application/services/settings.service";
 import { AppError } from "@/domain/errors/app-error";
 import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
-import { YoutubeRateLimitService } from "./youtube-rate-limit.service";
+import { RateLimitService, type ErrorType } from "./rate-limit.service";
 
 const execFilePromise = promisify(execFile);
 
@@ -18,10 +18,12 @@ const HEADERS = {
 export class YoutubeSearchService {
   private readonly ytDlpPath: string;
   private lastSearchTime: number = 0;
-  private readonly rateLimitService: YoutubeRateLimitService;
+  private readonly serviceKey = "youtube:search" as const;
 
-  constructor(private readonly settingsService: SettingsService) {
-    this.rateLimitService = new YoutubeRateLimitService();
+  constructor(
+    private readonly settingsService: SettingsService,
+    private readonly rateLimitService: RateLimitService,
+  ) {
     // Auto-detect yt-dlp path from system PATH
     try {
       const systemPath = execSync("which yt-dlp", {
@@ -61,12 +63,16 @@ export class YoutubeSearchService {
     const delayMs = await this.settingsService.getNumber("YT_SEARCH_DELAY_MS");
     const minDelay = delayMs || 1000; // Default 1 second
 
+    // Apply random multiplier (0.5 to 1.5)
+    const multiplier = 0.5 + Math.random() * 1.0;
+    const adjustedDelay = Math.round(minDelay * multiplier);
+
     const now = Date.now();
     const timeSinceLastSearch = now - this.lastSearchTime;
 
-    if (timeSinceLastSearch < minDelay) {
-      const waitTime = minDelay - timeSinceLastSearch;
-      console.debug(`Rate limiting: waiting ${waitTime}ms before next search`);
+    if (timeSinceLastSearch < adjustedDelay) {
+      const waitTime = adjustedDelay - timeSinceLastSearch;
+      console.debug(`Rate limiting YouTube search: waiting ${waitTime}ms`);
       await this.sleep(waitTime);
     }
 
@@ -78,7 +84,7 @@ export class YoutubeSearchService {
    */
   private classifyError(
     error: unknown,
-  ): { type: string; status?: string; message: string } {
+  ): { type: string; status?: string; message: string; errorType?: ErrorType } {
     const errorStr =
       (error as { stderr?: string; message?: string }).stderr ||
       (error as Error).message ||
@@ -88,14 +94,25 @@ export class YoutubeSearchService {
     if (
       errorStr.includes("rate-limited by YouTube") ||
       errorStr.includes("rate-limited") ||
+      errorStr.includes("rate limit") ||
       errorStr.includes("429")
     ) {
-      return { type: "RATE_LIMITED", status: "429", message: "YouTube rate limited (429)" };
+      return {
+        type: "RATE_LIMITED",
+        status: "429",
+        message: "YouTube rate limited (429)",
+        errorType: "RATE_LIMIT_429",
+      };
     }
 
     // HTTP Status codes
     if (errorStr.includes("403")) {
-      return { type: "FORBIDDEN", status: "403", message: "Access forbidden (403)" };
+      return {
+        type: "FORBIDDEN",
+        status: "403",
+        message: "Access forbidden (403)",
+        errorType: "FORBIDDEN_403",
+      };
     }
     if (errorStr.includes("404")) {
       return { type: "NOT_FOUND", status: "404", message: "Video not found (404)" };
@@ -122,10 +139,18 @@ export class YoutubeSearchService {
       errorStr.includes("timeout") ||
       errorStr.includes("ECONNREFUSED")
     ) {
-      return { type: "NETWORK_ERROR", message: "Network error: Cannot connect to YouTube" };
+      return {
+        type: "NETWORK_ERROR",
+        message: "Network error: Cannot connect to YouTube",
+        errorType: "CONNECTION_TIMEOUT",
+      };
     }
     if (errorStr.includes("ENOTFOUND") || errorStr.includes("getaddrinfo")) {
-      return { type: "DNS_ERROR", message: "DNS error: Cannot resolve YouTube domain" };
+      return {
+        type: "DNS_ERROR",
+        message: "DNS error: Cannot resolve YouTube domain",
+        errorType: "CONNECTION_TIMEOUT",
+      };
     }
 
     // Unknown error
@@ -141,13 +166,9 @@ export class YoutubeSearchService {
   }
 
   /**
-   * Execute yt-dlp search with retry logic
+   * Execute yt-dlp search with rate limit detection
    */
-  private async executeSearch(
-    args: string[],
-    retryCount: number = 0,
-    maxRetries: number = 3,
-  ): Promise<string> {
+  private async executeSearch(args: string[]): Promise<string> {
     try {
       const { stdout } = await execFilePromise(this.ytDlpPath, args);
       return stdout;
@@ -165,24 +186,13 @@ export class YoutubeSearchService {
 
       // Check if it's a rate limit error
       if (this.isRateLimitError(error)) {
-        if (retryCount < maxRetries) {
-          // Exponential backoff: 4s, 12s, 36s
-          const backoffMs = 4000 * Math.pow(3, retryCount);
-          console.warn(
-            `Rate limit detected. Retry ${retryCount + 1}/${maxRetries} after ${backoffMs / 1000}s`,
-          );
-          await this.sleep(backoffMs);
-          return this.executeSearch(args, retryCount + 1, maxRetries);
-        } else {
-          // Max retries exhausted - set random rate limit block (3-15 minutes)
-          console.error("[YoutubeSearchService] YouTube rate limit detected after max retries!");
-          await this.rateLimitService.setRateLimited();
-          const blockedUntil = await this.rateLimitService.getRateLimitUntil();
-          const untilTime = blockedUntil ? new Date(blockedUntil).toISOString() : "unknown";
-          throw new YoutubeRateLimitError(
-            `YouTube rate-limited - paused until ${untilTime}`,
-          );
-        }
+        const errorClassification = this.classifyError(error);
+        await this.rateLimitService.setBlocked(this.serviceKey, errorClassification.errorType || "RATE_LIMIT_429");
+        const blockedUntil = await this.rateLimitService.getBlockedUntil(this.serviceKey);
+        const untilTime = blockedUntil ? new Date(blockedUntil).toISOString() : "unknown";
+        throw new YoutubeRateLimitError(
+          `YouTube rate-limited - paused until ${untilTime}`,
+        );
       }
 
       throw error;
@@ -190,7 +200,16 @@ export class YoutubeSearchService {
   }
 
   async findOnYoutubeOne(artist: string, name: string): Promise<string> {
-    console.debug(`Searching ${artist} - ${name} on YT`);
+
+    // Check if YouTube is currently rate-limited
+    const isBlocked = await this.rateLimitService.isBlocked(this.serviceKey);
+    if (isBlocked) {
+      const blockedUntil = await this.rateLimitService.getBlockedUntil(this.serviceKey);
+      const message = blockedUntil
+        ? `YouTube is rate-limited until ${new Date(blockedUntil).toISOString()}`
+        : "YouTube is currently rate-limited";
+      throw new YoutubeRateLimitError(message);
+    }
 
     // Enforce rate limiting before making the request
     await this.enforceRateLimit();
