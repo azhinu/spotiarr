@@ -8,6 +8,13 @@
 
 **Self-hosted Spotify downloader with Jellyfin/Plex integration**
 
+
+## About this fork
+
+This is a fork of [SpotiArr](https://github.com/mralexsaavedra/spotiarr) with SoundCloud integration and a cooldown mechanism. No additional config required. See SpotiArr for details.
+
+
+
 [![License](https://img.shields.io/github/license/mralexsaavedra/spotiarr)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/mralexsaavedra/spotiarr)](https://github.com/mralexsaavedra/spotiarr/releases)
 [![Docker Pulls](https://img.shields.io/docker/pulls/mralexandersaavedra/spotiarr)](https://hub.docker.com/r/mralexandersaavedra/spotiarr)
