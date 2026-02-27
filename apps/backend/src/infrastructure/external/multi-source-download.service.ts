@@ -52,21 +52,12 @@ export class SoundCloudDownloadService {
         : "mp3"
     ) as SupportedAudioFormat;
 
-    const audioQuality = await this.settingsService.getString("YT_AUDIO_QUALITY");
-    const qualityMap: Record<string, 0 | 5 | 9> = {
-      best: 0,
-      good: 5,
-      acceptable: 9,
-    };
-    const quality = (qualityMap[audioQuality] ?? 0) as 0 | 5 | 9;
 
     try {
       await ytdlp.downloadAsync(track.sourceUrl, {
-        format: {
-          filter: "audioonly",
-          type: formatType,
-          quality,
-        },
+        extractAudio: true,
+        audioFormat: formatType,
+        audioQuality: await this.settingsService.getString("YT_AUDIO_QUALITY"),
         output,
         headers: HEADERS,
       });

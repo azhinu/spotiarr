@@ -4,7 +4,7 @@ import { GetSettingsUseCase } from "@/application/use-cases/settings/get-setting
 import { UpdateSettingUseCase } from "@/application/use-cases/settings/update-setting.use-case";
 import { SETTINGS_METADATA } from "@/constants/settings-metadata";
 
-const UI_SUPPORTED_FORMATS: SupportedAudioFormat[] = ["mp3", "m4a"];
+const UI_SUPPORTED_FORMATS: SupportedAudioFormat[] = ["mp3", "m4a", "opus"];
 
 export class SettingsController {
   constructor(
