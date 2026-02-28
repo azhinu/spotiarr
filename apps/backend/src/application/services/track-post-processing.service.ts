@@ -1,4 +1,4 @@
-import { PlaylistTypeEnum, type ITrack } from "@spotiarr/shared";
+import { NormalizedTrack, PlaylistTypeEnum, type ITrack } from "@spotiarr/shared";
 import * as fs from "fs";
 import * as path from "path";
 import { PlaylistRepository } from "@/domain/repositories/playlist.repository";
@@ -25,19 +25,49 @@ export class TrackPostProcessingService {
    */
   async process(track: ITrack, trackFilePath: string): Promise<void> {
     try {
-      const { trackCoverUrl, playlistCoverUrl, isPlaylistType } = await this.getCoverUrls(track);
+      console.log(`[PostProcessing] Starting metadata enrichment for: ${track.artist} - ${track.name}`);
+      console.log(`[PostProcessing] Available URLs - trackUrl: ${track.trackUrl || 'none'}, spotifyUrl: ${track.spotifyUrl || 'none'}`);
+
+      const { playlistCoverUrl, isPlaylistType } = await this.getPlaylistCoverInfo(track);
+      const spotifyTrackMetadata = await this.getSpotifyTrackMetadata(track);
+
+      if (spotifyTrackMetadata) {
+        console.log(`[PostProcessing] ✓ Spotify metadata received:`, {
+          name: spotifyTrackMetadata.name,
+          artist: spotifyTrackMetadata.artist,
+          album: spotifyTrackMetadata.album,
+          albumYear: spotifyTrackMetadata.albumYear,
+          trackNumber: spotifyTrackMetadata.trackNumber,
+          discNumber: spotifyTrackMetadata.discNumber,
+          totalTracks: spotifyTrackMetadata.totalTracks,
+          hasCover: !!spotifyTrackMetadata.albumCoverUrl
+        });
+      } else {
+        console.warn(`[PostProcessing] ✗ No Spotify metadata available, using track data as-is`);
+      }
+
+      const title = spotifyTrackMetadata?.name ?? track.name;
+      const artist = spotifyTrackMetadata?.artist ?? track.artist;
+      const album = spotifyTrackMetadata?.album ?? track.album;
+      const albumYear = spotifyTrackMetadata?.albumYear ?? track.albumYear;
+      const trackNumber = spotifyTrackMetadata?.trackNumber ?? track.trackNumber;
+      const discNumber = spotifyTrackMetadata?.discNumber ?? track.discNumber;
+      const totalTracks = spotifyTrackMetadata?.totalTracks ?? track.totalTracks;
+      const trackCoverUrl = spotifyTrackMetadata?.albumCoverUrl ?? "";
 
       // 1. Embed ID3 Tags (prefer specific track cover)
       await this.metadataService.writeTags(trackFilePath, {
-        title: track.name,
-        artist: track.artist,
-        album: track.album,
-        albumYear: track.albumYear,
-        trackNumber: track.trackNumber,
-        discNumber: track.discNumber,
-        totalTracks: track.totalTracks,
+        title,
+        artist,
+        album,
+        albumYear,
+        trackNumber,
+        discNumber,
+        totalTracks,
         coverUrl: trackCoverUrl || playlistCoverUrl || "",
       });
+
+      console.log(`[PostProcessing] ✓ ID3 tags written successfully to ${trackFilePath}`);
 
       // 2. Save folder cover.jpg
       const trackDirectory = path.dirname(trackFilePath);
@@ -84,8 +114,7 @@ export class TrackPostProcessingService {
     }
   }
 
-  private async getCoverUrls(track: ITrack): Promise<{
-    trackCoverUrl: string;
+  private async getPlaylistCoverInfo(track: ITrack): Promise<{
     playlistCoverUrl?: string;
     isPlaylistType: boolean;
   }> {
@@ -101,20 +130,52 @@ export class TrackPostProcessingService {
       }
     }
 
-    // Get Specific Track Cover from Spotify
-    let trackCoverUrl = "";
-    const urlToUse = track.spotifyUrl || track.trackUrl;
+    return { playlistCoverUrl, isPlaylistType };
+  }
 
-    if (urlToUse) {
+  private async getSpotifyTrackMetadata(track: ITrack): Promise<NormalizedTrack | null> {
+    const spotifyTrackUrl =
+      track.trackUrl ||
+      (track.spotifyUrl && track.spotifyUrl.includes("/track/") ? track.spotifyUrl : undefined);
+
+    if (spotifyTrackUrl) {
+      console.log(`[PostProcessing] Fetching Spotify metadata from URL: ${spotifyTrackUrl}`);
+      
       try {
-        const details = await this.spotifyService.getPlaylistDetail(urlToUse);
-        trackCoverUrl = details.image;
-      } catch (e) {
-        console.warn(`Failed to fetch cover for track ${track.name}: ${getErrorMessage(e)}`);
+        const details = await this.spotifyService.getPlaylistDetail(spotifyTrackUrl);
+        const trackData = details.tracks[0] ?? null;
+        
+        if (trackData) {
+          return trackData;
+        }
+        
+        console.warn(`[PostProcessing] Spotify returned empty tracks array for ${spotifyTrackUrl}`);
+      } catch (error) {
+        console.error(`[PostProcessing] Failed to fetch Spotify metadata from URL ${spotifyTrackUrl}: ${getErrorMessage(error)}`);
       }
+    } else {
+      console.log(`[PostProcessing] No trackUrl available, trying Spotify search for: ${track.artist} - ${track.name}`);
     }
 
-    return { trackCoverUrl, playlistCoverUrl, isPlaylistType };
+    // Fallback: search by artist and track name
+    try {
+      const searchQuery = `${track.artist} ${track.name}`;
+      console.log(`[PostProcessing] Searching Spotify for: "${searchQuery}"`);
+      
+      const searchResults = await this.spotifyService.searchCatalog(searchQuery, ["track"], { track: 1 });
+      
+      if (searchResults.tracks && searchResults.tracks.length > 0) {
+        const foundTrack = searchResults.tracks[0];
+        console.log(`[PostProcessing] ✓ Found track via search: ${foundTrack.artist} - ${foundTrack.name}`);
+        return foundTrack;
+      } else {
+        console.warn(`[PostProcessing] No results from Spotify search for "${searchQuery}"`);
+      }
+    } catch (error) {
+      console.error(`[PostProcessing] Failed to search Spotify for track ${track.name}: ${getErrorMessage(error)}`);
+    }
+
+    return null;
   }
 
   private async saveArtistImageIfNeeded(track: ITrack): Promise<void> {

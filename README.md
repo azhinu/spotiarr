@@ -19,6 +19,7 @@ This is a fork of [SpotiArr](https://github.com/mralexsaavedra/spotiarr) with So
 - Rate limiting error handling
 - Music from playlists downloading in Artist/Album structure instead of Playlists
 - Sync your local library with SpotyArr's database
+- Syncing metadata from Spotify to downloaded tracks
 
 
 
