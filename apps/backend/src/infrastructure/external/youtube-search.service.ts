@@ -133,15 +133,17 @@ export class YoutubeSearchService {
       return { type: "CONTENT_UNAVAILABLE", message: "Video content is unavailable" };
     }
 
-    // Network errors
+    // Network errors - including yt-dlp specific timeout messages
     if (
       errorStr.includes("Connection") ||
       errorStr.includes("timeout") ||
+      errorStr.includes("read operation timed out") ||
+      errorStr.includes("Giving up after") ||
       errorStr.includes("ECONNREFUSED")
     ) {
       return {
         type: "NETWORK_ERROR",
-        message: "Network error: Cannot connect to YouTube",
+        message: "Network error: Connection timeout or read error",
         errorType: "CONNECTION_TIMEOUT",
       };
     }

@@ -140,15 +140,17 @@ export class SoundCloudSearchService {
       return { type: "UNAUTHORIZED", status: "401", message: "Unauthorized access (401)" };
     }
 
-    // Network errors
+    // Network errors - including yt-dlp specific timeout messages
     if (
       errorStr.includes("Connection") ||
       errorStr.includes("timeout") ||
+      errorStr.includes("read operation timed out") ||
+      errorStr.includes("Giving up after") ||
       errorStr.includes("ECONNREFUSED")
     ) {
       return {
         type: "NETWORK_ERROR",
-        message: "Network error: Cannot connect to SoundCloud",
+        message: "Network error: Connection timeout or read error",
         errorType: "CONNECTION_TIMEOUT",
       };
     }

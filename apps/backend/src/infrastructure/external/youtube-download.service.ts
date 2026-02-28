@@ -136,11 +136,19 @@ export class YoutubeDownloadService {
       };
     }
 
-    // Connection errors
-    if (error.includes("timeout") || error.includes("Connection")) {
+    // Connection/timeout errors - including yt-dlp specific timeout messages
+    if (
+      error.includes("timeout") ||
+      error.includes("Connection") ||
+      error.includes("read operation timed out") ||
+      error.includes("Giving up after") ||
+      error.includes("ECONNREFUSED") ||
+      error.includes("ENOTFOUND") ||
+      error.includes("getaddrinfo")
+    ) {
       return {
         type: "CONNECTION_ERROR",
-        message: "Connection timeout",
+        message: "Network connection error or timeout",
         errorType: "CONNECTION_TIMEOUT",
       };
     }
