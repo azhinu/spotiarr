@@ -1,3 +1,4 @@
+import { logger } from "@/infrastructure/utils/logger";
 import { SpotifyAuthService } from "./spotify-auth.service";
 
 export class SpotifyHttpClient {
@@ -26,7 +27,7 @@ export class SpotifyHttpClient {
         // Add 1s buffer to be safe
         const waitMs = (retryAfterSeconds + 1) * 1000;
 
-        console.warn(
+        logger.warn(
           `[SpotifyHttpClient] Rate limited (429). Waiting ${waitMs}ms before retry ${retries + 1}/${MAX_RETRIES}`,
         );
 
@@ -46,7 +47,7 @@ export class SpotifyHttpClient {
 
       if (isNetworkError && retries < MAX_RETRIES) {
         const waitMs = Math.pow(2, retries) * 2000; // Exponential backoff: 0s->2s, 1s->4s, 2s->8s...
-        console.warn(
+        logger.warn(
           `[SpotifyHttpClient] Network error (${error.message}). Retrying in ${waitMs}ms (${retries + 1}/${MAX_RETRIES})`,
         );
         await this.sleep(waitMs);

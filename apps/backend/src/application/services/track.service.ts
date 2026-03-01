@@ -1,4 +1,5 @@
 import { TrackStatusEnum, type ITrack } from "@spotiarr/shared";
+import type { MusicSource } from "@/infrastructure/external/multi-source-search.service";
 import { CreateTrackUseCase } from "../use-cases/tracks/create-track.use-case";
 import { DeleteTrackUseCase } from "../use-cases/tracks/delete-track.use-case";
 import { DownloadTrackUseCase } from "../use-cases/tracks/download-track.use-case";
@@ -65,8 +66,8 @@ export class TrackService {
     await this.updateTrackUseCase.execute(id, track);
   }
 
-  async retry(id: string): Promise<void> {
-    return this.retryTrackDownloadUseCase.execute(id);
+  async retry(id: string, options?: { preferredSource?: MusicSource }): Promise<void> {
+    return this.retryTrackDownloadUseCase.execute(id, options);
   }
 
   /**
@@ -87,7 +88,7 @@ export class TrackService {
     return this.downloadTrackUseCase.execute(track);
   }
 
-  async findStuckTracks(statuses: TrackStatusEnum[], createdBefore: number): Promise<ITrack[]> {
-    return this.getTracksUseCase.findStuckTracks(statuses, createdBefore);
+  async findStuckTracks(statuses: TrackStatusEnum[], updatedBefore: number): Promise<ITrack[]> {
+    return this.getTracksUseCase.findStuckTracks(statuses, updatedBefore);
   }
 }

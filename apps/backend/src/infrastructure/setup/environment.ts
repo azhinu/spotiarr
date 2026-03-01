@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { z, ZodError, ZodIssue } from "zod";
 import { AppError } from "@/domain/errors/app-error";
+import { logger } from "@/infrastructure/utils/logger";
 
 // -----------------------------------------------------------------------------
 // Environment Loading
@@ -18,7 +19,7 @@ config({ path: resolve(rootDir, `.env.${currentEnv}.local`) });
 config({ path: resolve(rootDir, `.env.${currentEnv}`) });
 config({ path: resolve(rootDir, ".env") });
 
-console.log(`[Env] Loaded environment for: ${currentEnv}`);
+logger.log(`[Env] Loaded environment for: ${currentEnv}`);
 
 // -----------------------------------------------------------------------------
 // Schema Validation & Auto-configuration
@@ -94,18 +95,18 @@ function resolveDatabaseUrl(providedUrl: string | undefined): string {
 export function validateEnvironment(): void {
   try {
     validatedEnv = envSchema.parse(process.env);
-    console.log("✅ Environment variables validated successfully");
+    logger.log("✅ Environment variables validated successfully");
   } catch (error) {
     if (error instanceof ZodError) {
-      console.error("\n❌ Environment validation failed!\n");
-      console.error("Missing or invalid environment variables:\n");
+      logger.error("\n❌ Environment validation failed!\n");
+      logger.error("Missing or invalid environment variables:\n");
 
       error.issues.forEach((err: ZodIssue) => {
-        console.error(`  - ${err.path.join(".")}: ${err.message}`);
+        logger.error(`  - ${err.path.join(".")}: ${err.message}`);
       });
 
-      console.error("\nPlease check your .env file and ensure all required variables are set.");
-      console.error("See .env.example for reference.\n");
+      logger.error("\nPlease check your .env file and ensure all required variables are set.");
+      logger.error("See .env.example for reference.\n");
     }
     process.exit(1);
   }

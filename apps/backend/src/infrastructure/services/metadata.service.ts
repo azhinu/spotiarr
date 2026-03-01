@@ -1,9 +1,10 @@
+import { execFile } from "child_process";
 import * as fs from "fs";
 import * as NodeID3 from "node-id3";
 import { join } from "path";
-import { execFile } from "child_process";
 import { promisify } from "util";
 import { AppError } from "@/domain/errors/app-error";
+import { logger } from "@/infrastructure/utils/logger";
 import { getErrorMessage } from "../utils/error.utils";
 
 const execFilePromise = promisify(execFile);
@@ -24,15 +25,15 @@ export class MetadataService {
   ): Promise<void> {
     const fileExtension = filePath.split(".").pop()?.toLowerCase();
 
-    console.log(`[MetadataService] Writing tags to ${fileExtension} file: ${filePath}`);
+    logger.log(`[MetadataService] Writing tags to ${fileExtension} file: ${filePath}`);
 
     // For MP3 files, use node-id3 (more reliable for MP3)
     if (fileExtension === "mp3") {
-      console.log(`[MetadataService] Using node-id3 for MP3 format`);
+      logger.log(`[MetadataService] Using node-id3 for MP3 format`);
       await this.writeTagsWithNodeID3(filePath, fileTags);
     } else {
       // For all other formats (opus, flac, m4a, ogg, etc.), use ffmpeg
-      console.log(`[MetadataService] Using ffmpeg for ${fileExtension} format`);
+      logger.log(`[MetadataService] Using ffmpeg for ${fileExtension} format`);
       await this.writeTagsWithFFmpeg(filePath, fileTags);
     }
   }
@@ -88,13 +89,13 @@ export class MetadataService {
           imageBuffer,
         };
       } catch (error) {
-        console.warn(`Failed to download cover for embedding: ${getErrorMessage(error)}`);
+        logger.warn(`Failed to download cover for embedding: ${getErrorMessage(error)}`);
       }
     }
 
     const success = NodeID3.write(tags, filePath);
     if (!success) {
-      console.warn(`NodeID3.write returned false for ${filePath}`);
+      logger.warn(`NodeID3.write returned false for ${filePath}`);
     }
   }
 
@@ -161,14 +162,14 @@ export class MetadataService {
           ffmpegArgs.push("-metadata:s:v", "comment=Cover (front)");
           ffmpegArgs.push("-disposition:v:0", "attached_pic");
         } catch (error) {
-          console.warn(`Failed to download cover for embedding: ${getErrorMessage(error)}`);
+          logger.warn(`Failed to download cover for embedding: ${getErrorMessage(error)}`);
         }
       }
 
       // Output file
       ffmpegArgs.push("-y", tempFilePath);
 
-      console.debug(`[MetadataService] Running ffmpeg with args: ffmpeg ${ffmpegArgs.join(" ")}`);
+      logger.debug(`[MetadataService] Running ffmpeg with args: ffmpeg ${ffmpegArgs.join(" ")}`);
 
       await execFilePromise("ffmpeg", ffmpegArgs);
 
@@ -180,16 +181,19 @@ export class MetadataService {
         fs.unlinkSync(coverImagePath);
       }
 
-      console.log(`[MetadataService] ✓ Successfully wrote tags using ffmpeg to ${filePath}`);
+      logger.log(`[MetadataService] ✓ Successfully wrote tags using ffmpeg to ${filePath}`);
     } catch (error) {
-      console.error(`[MetadataService] Failed to write tags with ffmpeg for ${filePath}:`, getErrorMessage(error));
-      
+      logger.error(
+        `[MetadataService] Failed to write tags with ffmpeg for ${filePath}:`,
+        getErrorMessage(error),
+      );
+
       // Clean up temp files on error
       const tempFilePath = `${filePath}.tmp.${filePath.split(".").pop()}`;
       if (fs.existsSync(tempFilePath)) {
         fs.unlinkSync(tempFilePath);
       }
-      
+
       const coverImagePath = `${filePath}.cover.jpg`;
       if (fs.existsSync(coverImagePath)) {
         fs.unlinkSync(coverImagePath);
@@ -222,12 +226,12 @@ export class MetadataService {
 
       // Only download if the file doesn't exist
       if (fs.existsSync(coverFile)) {
-        console.debug(`Cover art already exists in ${directory}`);
+        logger.debug(`Cover art already exists in ${directory}`);
         return;
       }
 
       // Download the image
-      console.debug(`Downloading cover art to ${directory}`);
+      logger.debug(`Downloading cover art to ${directory}`);
       const response = await fetch(coverUrl);
 
       if (!response.ok) {
@@ -243,9 +247,9 @@ export class MetadataService {
       // Save file
       fs.writeFileSync(coverFile, imageBuffer);
 
-      console.debug(`✓ Cover art saved: ${coverFile}`);
+      logger.debug(`✓ Cover art saved: ${coverFile}`);
     } catch (error) {
-      console.warn(`Failed to save cover art in ${directory}: ${getErrorMessage(error)}`);
+      logger.warn(`Failed to save cover art in ${directory}: ${getErrorMessage(error)}`);
     }
   }
 }

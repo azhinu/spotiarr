@@ -42,6 +42,7 @@ model Track {
   status                String   @default("New")
   error                 String?
   createdAt             BigInt  @default(0)
+  updatedAt             BigInt  @default(0)
   completedAt           BigInt?
   playlistIndex         Int?
 

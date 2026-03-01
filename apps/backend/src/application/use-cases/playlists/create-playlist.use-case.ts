@@ -11,6 +11,7 @@ import { EventBus } from "@/domain/events/event-bus";
 import { SpotifyUrlHelper, SpotifyUrlType } from "@/domain/helpers/spotify-url.helper";
 import type { PlaylistRepository } from "@/domain/repositories/playlist.repository";
 import { SpotifyService } from "@/domain/services/spotify.service";
+import { logger } from "@/infrastructure/utils/logger";
 import { SettingsService } from "../../services/settings.service";
 import { TrackService } from "../../services/track.service";
 
@@ -27,7 +28,7 @@ export class CreatePlaylistUseCase {
   constructor(
     private readonly playlistRepository: PlaylistRepository,
     private readonly spotifyService: SpotifyService,
-    private readonly trackService: TrackService,
+    private readonly getTrackService: () => TrackService,
     private readonly settingsService: SettingsService,
     private readonly eventBus: EventBus,
   ) {}
@@ -49,7 +50,7 @@ export class CreatePlaylistUseCase {
 
     try {
       detail = await this.spotifyService.getPlaylistDetail(playlist.spotifyUrl);
-      console.debug(`Playlist detail retrieved with ${detail.tracks?.length || 0} tracks`);
+      logger.debug(`Playlist detail retrieved with ${detail.tracks?.length || 0} tracks`);
 
       let displayName = detail.name;
       if ((detail.type === "track" || detail.type === "album") && detail.tracks?.length > 0) {
@@ -82,7 +83,7 @@ export class CreatePlaylistUseCase {
         playlist.markAsSubscribed();
       }
     } catch (error) {
-      console.error(
+      logger.error(
         `Error getting playlist details: ${playlist.spotifyUrl}`,
         error instanceof Error ? error.stack : String(error),
       );
@@ -108,7 +109,7 @@ export class CreatePlaylistUseCase {
     if (detail?.tracks && detail.tracks.length > 0) {
       await this.processTracks(savedPlaylist, detail.tracks);
     } else {
-      console.warn(`No tracks found for playlist ${savedPlaylist.name}`);
+      logger.warn(`No tracks found for playlist ${savedPlaylist.name}`);
     }
 
     this.eventBus.emit("playlists-updated");
@@ -116,7 +117,7 @@ export class CreatePlaylistUseCase {
   }
 
   private async processTracks(playlist: IPlaylist, tracks: NormalizedTrack[]): Promise<void> {
-    console.debug(`Starting to process ${tracks.length} tracks for playlist ${playlist.name}`);
+    logger.debug(`Starting to process ${tracks.length} tracks for playlist ${playlist.name}`);
 
     let processedCount = 0;
     let skippedCount = 0;
@@ -132,12 +133,14 @@ export class CreatePlaylistUseCase {
     };
 
     // Get existing tracks in playlist to avoid duplicates
-    const existingTracks = await this.trackService.getAllByPlaylist(playlist.id);
+    const existingTracks = await this.getTrackService().getAllByPlaylist(playlist.id);
     const existingTrackMap = new Map(
-      existingTracks.map((t) => [this.buildBaseTrackKey(t.artist, t.name), t] as const)
+      existingTracks.map((t) => [this.buildBaseTrackKey(t.artist, t.name), t] as const),
     );
 
-    const completedTracks = await this.trackService.getAll({ status: TrackStatusEnum.Completed });
+    const completedTracks = await this.getTrackService().getAll({
+      status: TrackStatusEnum.Completed,
+    });
     const completedTrackMap = new Map<string, ITrack>();
     for (const completedTrack of completedTracks) {
       const fullKey = this.buildFullTrackKey(
@@ -159,8 +162,8 @@ export class CreatePlaylistUseCase {
     for (let i = 0; i < tracks.length; i += BATCH_SIZE) {
       const batch = tracks.slice(i, i + BATCH_SIZE);
       const results = await Promise.all(
-        batch.map((track, index) => 
-          this.processTrack(track, i + index, context, existingTrackMap, completedTrackMap)
+        batch.map((track, index) =>
+          this.processTrack(track, i + index, context, existingTrackMap, completedTrackMap),
         ),
       );
 
@@ -171,11 +174,11 @@ export class CreatePlaylistUseCase {
       }
 
       if (processedCount % 50 === 0 && processedCount > 0) {
-        console.debug(`Processed ${processedCount} tracks so far for playlist ${playlist.name}`);
+        logger.debug(`Processed ${processedCount} tracks so far for playlist ${playlist.name}`);
       }
     }
 
-    console.debug(
+    logger.debug(
       `Finished processing playlist ${playlist.name}: ${processedCount} tracks processed, ${skippedCount} skipped, ${errorCount} errors`,
     );
   }
@@ -195,12 +198,12 @@ export class CreatePlaylistUseCase {
   ): Promise<"ok" | "skipped" | "error"> {
     try {
       if (!track.artist || !track.name) {
-        console.warn(`Skipping track ${index + 1}: Missing artist or name information`);
+        logger.warn(`Skipping track ${index + 1}: Missing artist or name information`);
         return "skipped";
       }
 
       if (track.unavailable === true) {
-        console.warn(`Skipping unavailable track ${index + 1}: ${track.artist} - ${track.name}`);
+        logger.warn(`Skipping unavailable track ${index + 1}: ${track.artist} - ${track.name}`);
         return "skipped";
       }
 
@@ -216,12 +219,14 @@ export class CreatePlaylistUseCase {
       if (existingTrack) {
         // Skip only if track is already completed
         if (existingTrack.status === TrackStatusEnum.Completed) {
-          console.debug(`Track already completed, skipping: ${artistToUse} - ${track.name}`);
+          logger.debug(`Track already completed, skipping: ${artistToUse} - ${track.name}`);
           return "skipped";
         }
         // For failed tracks, re-queue them
-        console.debug(`Re-queuing track with status ${existingTrack.status}: ${artistToUse} - ${track.name}`);
-        await this.trackService.findTrack(existingTrack);
+        logger.debug(
+          `Re-queuing track with status ${existingTrack.status}: ${artistToUse} - ${track.name}`,
+        );
+        await this.getTrackService().findTrack(existingTrack);
         return "ok";
       }
 
@@ -236,7 +241,7 @@ export class CreatePlaylistUseCase {
       const trackNumber = track.trackNumber ?? index + 1;
 
       if (existingLibraryTrack) {
-        await this.trackService.create({
+        await this.getTrackService().create({
           artist: artistToUse,
           name: track.name,
           album: albumToUse,
@@ -254,11 +259,13 @@ export class CreatePlaylistUseCase {
           error: undefined,
         });
 
-        console.debug(`Track found in library metadata, marking completed: ${artistToUse} - ${track.name}`);
+        logger.debug(
+          `Track found in library metadata, marking completed: ${artistToUse} - ${track.name}`,
+        );
         return "ok";
       }
 
-      await this.trackService.create({
+      await this.getTrackService().create({
         artist: artistToUse,
         name: track.name,
         album: albumToUse,
@@ -275,7 +282,7 @@ export class CreatePlaylistUseCase {
 
       return "ok";
     } catch (error) {
-      console.error(
+      logger.error(
         `Error creating track "${track?.artist || "Unknown"} - ${track?.name || "Unknown"}": ${error instanceof Error ? error.message : String(error)}`,
       );
       return "error";

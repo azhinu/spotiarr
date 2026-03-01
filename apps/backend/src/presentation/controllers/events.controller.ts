@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { getErrorMessage } from "@/infrastructure/utils/error.utils";
+import { logger } from "@/infrastructure/utils/logger";
 
 interface SseClient {
   id: number;
@@ -23,11 +24,13 @@ export class EventsController {
 
     const id = this.clientId++;
     this.clients.push({ id, res });
+    logger.debug(`[SSE] client connected id=${id}, total=${this.clients.length}`);
 
     req.on("close", () => {
       const index = this.clients.findIndex((c) => c.id === id);
       if (index >= 0) {
         this.clients.splice(index, 1);
+        logger.debug(`[SSE] client disconnected id=${id}, total=${this.clients.length}`);
       }
     });
   };
@@ -37,12 +40,14 @@ export class EventsController {
       return;
     }
 
+    logger.debug(`[SSE] emit event=${event}, clients=${this.clients.length}`);
+
     const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const client of this.clients) {
       try {
         client.res.write(payload);
       } catch (error) {
-        console.error("Failed to write SSE event:", getErrorMessage(error));
+        logger.error("Failed to write SSE event:", getErrorMessage(error));
       }
     }
   };

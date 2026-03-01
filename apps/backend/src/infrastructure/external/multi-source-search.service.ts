@@ -1,6 +1,7 @@
 import { SettingsService } from "@/application/services/settings.service";
 import { AppError } from "@/domain/errors/app-error";
 import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
+import { logger } from "@/infrastructure/utils/logger";
 import { RateLimitService } from "./rate-limit.service";
 import { SoundCloudSearchService } from "./soundcloud-search.service";
 import { YoutubeSearchService } from "./youtube-search.service";
@@ -63,19 +64,17 @@ export class MultiSourceSearchService {
 
     for (const source of sources) {
       try {
-        console.debug(
-          `[MultiSourceSearchService] Trying source: ${source.name} for "${artist} - ${name}"`,
+        logger.log(
+          `[MultiSourceSearchService] 🔍 Trying source: ${source.name.toUpperCase()} for "${artist} - ${name}"`,
         );
         const url = await source.search();
-        console.info(
-          `[MultiSourceSearchService] ✓ SUCCESS: Found on ${source.name} - ${url}`,
-        );
+        logger.log(`[MultiSourceSearchService] ✓ SUCCESS on ${source.name.toUpperCase()}: ${url}`);
         return { url, source: source.name };
       } catch (error) {
         // Re-throw YouTube rate limit errors immediately
         if (error instanceof YoutubeRateLimitError) {
-          console.error(
-            `[MultiSourceSearchService] 🔴 RATE_LIMITED (YouTube): Deferring search for "${artist} - ${name}"`,
+          logger.log(
+            `[MultiSourceSearchService] ⚠️  RATE_LIMITED (YouTube): Deferring search for "${artist} - ${name}"`,
           );
           throw error;
         }
@@ -83,24 +82,22 @@ export class MultiSourceSearchService {
         // Log the error and continue to next source
         const errorMsg = error instanceof Error ? error.message : String(error);
         errors.push({ source: source.name, error });
-        
+
         // Try to extract more info about the error
         let errorInfo = errorMsg;
         if (error instanceof AppError) {
           errorInfo = `[${error.statusCode}] ${error.errorCode}: ${errorMsg}`;
         }
-        
-        console.debug(
-          `[MultiSourceSearchService] ✗ FAILED (${source.name}): ${errorInfo}`,
+
+        logger.error(
+          `[MultiSourceSearchService] ✗ FAILED (${source.name.toUpperCase()}): ${errorInfo}. Trying next source...`,
         );
       }
     }
 
     // If we get here, no source found the track
-    console.error(
-      `[MultiSourceSearchService] Track not found on any source: ${artist} - ${name}`,
-    );
-    console.error("Errors from each source:", errors);
+    logger.log(`[MultiSourceSearchService] ✗ Track not found on any source: "${artist} - ${name}"`);
+    logger.error("Errors from each source:", errors);
     throw new AppError(
       404,
       "track_not_found_any_source",
@@ -146,16 +143,14 @@ export class MultiSourceSearchService {
 
     for (const source of reorderedSources) {
       try {
-        console.debug(`[MultiSourceSearchService] Trying ${source.name} for ${artist} - ${name}`);
+        logger.debug(`[MultiSourceSearchService] Trying ${source.name} for ${artist} - ${name}`);
         const url = await source.search();
-        console.info(
-          `[MultiSourceSearchService] Found ${artist} - ${name} on ${source.name}`,
-        );
+        logger.info(`[MultiSourceSearchService] Found ${artist} - ${name} on ${source.name}`);
         return { url, source: source.name };
       } catch (error) {
         // Re-throw YouTube rate limit errors immediately
         if (error instanceof YoutubeRateLimitError) {
-          console.error(
+          logger.log(
             `[MultiSourceSearchService] YouTube rate-limited while searching for ${artist} - ${name}`,
           );
           throw error;
@@ -163,7 +158,7 @@ export class MultiSourceSearchService {
 
         // Log the error and continue to next source
         errors.push({ source: source.name, error });
-        console.debug(
+        logger.debug(
           `[MultiSourceSearchService] ${source.name} failed for ${artist} - ${name}:`,
           error instanceof Error ? error.message : String(error),
         );

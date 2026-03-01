@@ -9,7 +9,7 @@ export class SyncSubscribedPlaylistsUseCase {
   constructor(
     private readonly playlistRepository: PlaylistRepository,
     private readonly spotifyService: SpotifyService,
-    private readonly trackService: TrackService,
+    private readonly getTrackService: () => TrackService,
     private readonly eventBus: EventBus,
   ) {}
 
@@ -41,7 +41,7 @@ export class SyncSubscribedPlaylistsUseCase {
       const isTrack = urlType === SpotifyUrlType.Track;
       const isAlbum = urlType === SpotifyUrlType.Album;
 
-      const existingTracks = await this.trackService.getAllByPlaylist(playlist.id);
+      const existingTracks = await this.getTrackService().getAllByPlaylist(playlist.id);
       const existingTrackKeys = new Set(
         existingTracks.map((t) => `${t.artist}|${t.name}|${t.spotifyUrl || "undefined"}`),
       );
@@ -85,7 +85,7 @@ export class SyncSubscribedPlaylistsUseCase {
               const artistToUse =
                 (isAlbum || isTrack) && track.primaryArtist ? track.primaryArtist : track.artist;
 
-              await this.trackService.create({
+              await this.getTrackService().create({
                 artist: artistToUse,
                 name: track.name,
                 album: track.album ?? (isTrack ? "Singles" : playlist.name),

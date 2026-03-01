@@ -1,6 +1,7 @@
 import type { EventBus } from "@/domain/events/event-bus";
 import type { SettingsRepository } from "@/domain/repositories/settings.repository";
 import type { SpotifyUserLibraryService } from "@/infrastructure/external/spotify-user-library.service";
+import { logger } from "@/infrastructure/utils/logger";
 
 export class UpdateSettingUseCase {
   constructor(
@@ -27,7 +28,7 @@ export class UpdateSettingUseCase {
 
         fs.writeFileSync(cookiePath, value, "utf-8");
         finalValue = cookiePath;
-        console.log(`Saved YouTube cookies to ${cookiePath}`);
+        logger.log(`Saved YouTube cookies to ${cookiePath}`);
       }
     }
 

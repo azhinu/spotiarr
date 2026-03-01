@@ -3,8 +3,9 @@ import cors from "cors";
 import express, { type Express } from "express";
 import helmet from "helmet";
 import path from "path";
+import { container } from "./container";
 import { errorHandler } from "./presentation/middleware/error-handler";
-import routes from "./presentation/routes";
+import { createRouter } from "./presentation/routes";
 
 export const app: Express = express();
 
@@ -31,7 +32,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// API Routes
+// API Routes (with dependency injection)
+const routes = createRouter({
+  eventsController: container.eventsController,
+});
 app.use(ApiRoutes.BASE, routes);
 
 // Serve static files (frontend)

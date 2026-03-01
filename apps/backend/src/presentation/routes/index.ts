@@ -1,8 +1,9 @@
 import { ApiRoutes } from "@spotiarr/shared";
 import { Router, type Router as ExpressRouter } from "express";
+import type { EventsController } from "@/presentation/controllers/events.controller";
 import artistRoutes from "./artist.routes";
 import authRoutes from "./auth.routes";
-import eventsRoutes from "./events.routes";
+import { createEventsRouter } from "./events.routes";
 import feedRoutes from "./feed.routes";
 import healthRoutes from "./health.routes";
 import historyRoutes from "./history.routes";
@@ -12,18 +13,24 @@ import searchRoutes from "./search.routes";
 import settingsRoutes from "./settings.routes";
 import trackRoutes from "./track.routes";
 
-const router: ExpressRouter = Router();
+interface RouterDependencies {
+  eventsController: EventsController;
+}
 
-router.use(ApiRoutes.HEALTH, healthRoutes);
-router.use(ApiRoutes.PLAYLIST, playlistRoutes);
-router.use(ApiRoutes.TRACK, trackRoutes);
-router.use(ApiRoutes.HISTORY, historyRoutes);
-router.use(ApiRoutes.SETTINGS, settingsRoutes);
-router.use(ApiRoutes.EVENTS, eventsRoutes);
-router.use(ApiRoutes.FEED, feedRoutes);
-router.use(ApiRoutes.ARTIST, artistRoutes);
-router.use(ApiRoutes.AUTH, authRoutes);
-router.use(ApiRoutes.LIBRARY, libraryRoutes);
-router.use(ApiRoutes.SEARCH, searchRoutes);
+export const createRouter = (dependencies: RouterDependencies): ExpressRouter => {
+  const router: ExpressRouter = Router();
 
-export default router;
+  router.use(ApiRoutes.HEALTH, healthRoutes);
+  router.use(ApiRoutes.PLAYLIST, playlistRoutes);
+  router.use(ApiRoutes.TRACK, trackRoutes);
+  router.use(ApiRoutes.HISTORY, historyRoutes);
+  router.use(ApiRoutes.SETTINGS, settingsRoutes);
+  router.use(ApiRoutes.EVENTS, createEventsRouter(dependencies.eventsController));
+  router.use(ApiRoutes.FEED, feedRoutes);
+  router.use(ApiRoutes.ARTIST, artistRoutes);
+  router.use(ApiRoutes.AUTH, authRoutes);
+  router.use(ApiRoutes.LIBRARY, libraryRoutes);
+  router.use(ApiRoutes.SEARCH, searchRoutes);
+
+  return router;
+};

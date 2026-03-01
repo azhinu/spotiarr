@@ -7,6 +7,7 @@ import { SpotifySearchClient } from "@/infrastructure/external/spotify-search.cl
 import { SpotifyTrackClient } from "@/infrastructure/external/spotify-track.client";
 import { SpotifyUserLibraryService } from "@/infrastructure/external/spotify-user-library.service";
 import { getErrorMessage } from "@/infrastructure/utils/error.utils";
+import { logger } from "@/infrastructure/utils/logger";
 import { SpotifyUrlHelper, SpotifyUrlType } from "../helpers/spotify-url.helper";
 
 export type PlaylistTrack = NormalizedTrack;
@@ -29,7 +30,7 @@ export class SpotifyService {
     owner?: string;
     ownerUrl?: string;
   }> {
-    console.debug(`Get playlist ${spotifyUrl} on Spotify`);
+    logger.debug(`Get playlist ${spotifyUrl} on Spotify`);
 
     const urlType = SpotifyUrlHelper.getUrlType(spotifyUrl);
     const type = urlType.toString();
@@ -83,26 +84,26 @@ export class SpotifyService {
       const _exhaustiveCheck: never = urlType;
       throw new AppError(400, "invalid_spotify_url", `Unhandled URL type: ${_exhaustiveCheck}`);
     } catch (error) {
-      console.error(`Error getting playlist details: ${getErrorMessage(error)}`);
+      logger.error(`Error getting playlist details: ${getErrorMessage(error)}`);
       throw error;
     }
   }
 
   async getPlaylistTracks(spotifyUrl: string): Promise<PlaylistTrack[]> {
-    console.debug(`Get playlist ${spotifyUrl} on Spotify`);
+    logger.debug(`Get playlist ${spotifyUrl} on Spotify`);
     try {
       return await this.spotifyPlaylistClient.getAllPlaylistTracks(spotifyUrl);
     } catch (error) {
-      console.error(`Error getting playlist tracks: ${getErrorMessage(error)}`);
+      logger.error(`Error getting playlist tracks: ${getErrorMessage(error)}`);
       return [];
     }
   }
   async getMyPlaylists(): Promise<SpotifyPlaylist[]> {
-    console.debug(`Get user's playlists on Spotify`);
+    logger.debug(`Get user's playlists on Spotify`);
     try {
       return await this.spotifyUserLibraryService.getMyPlaylists();
     } catch (error) {
-      console.error(`Error getting user playlists: ${getErrorMessage(error)}`);
+      logger.error(`Error getting user playlists: ${getErrorMessage(error)}`);
       throw error;
     }
   }
@@ -112,11 +113,11 @@ export class SpotifyService {
     types?: string[],
     limits?: { track?: number; album?: number; artist?: number },
   ): Promise<SpotifySearchResults> {
-    console.debug(`Search catalog for ${query} on Spotify`);
+    logger.debug(`Search catalog for ${query} on Spotify`);
     try {
       return await this.spotifySearchClient.searchCatalog(query, types, limits);
     } catch (error) {
-      console.error(`Error searching catalog: ${getErrorMessage(error)}`);
+      logger.error(`Error searching catalog: ${getErrorMessage(error)}`);
       throw error;
     }
   }

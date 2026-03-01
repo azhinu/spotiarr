@@ -38,6 +38,9 @@ export class PrismaTrackRepository implements TrackRepository {
 
   async save(track: ITrack | Track): Promise<Track> {
     const data = track instanceof Track ? track.toPrimitive() : track;
+    const now = Date.now();
+    const createdAt = data.createdAt ?? now;
+    const updatedAt = data.updatedAt ?? createdAt;
 
     const created = await prisma.track.create({
       data: {
@@ -55,7 +58,8 @@ export class PrismaTrackRepository implements TrackRepository {
         youtubeUrl: data.youtubeUrl,
         status: data.status || "New",
         error: data.error,
-        createdAt: data.createdAt ? BigInt(data.createdAt) : BigInt(Date.now()),
+        createdAt: BigInt(createdAt),
+        updatedAt: BigInt(updatedAt),
         completedAt: data.completedAt ? BigInt(data.completedAt) : null,
         playlistId: data.playlistId,
         playlistIndex: data.playlistIndex,
@@ -84,6 +88,7 @@ export class PrismaTrackRepository implements TrackRepository {
         status: data.status,
         error: data.error,
         completedAt: data.completedAt ? BigInt(data.completedAt) : undefined,
+        updatedAt: BigInt(Date.now()),
         playlistIndex: data.playlistIndex ?? undefined,
       },
     });
@@ -97,11 +102,11 @@ export class PrismaTrackRepository implements TrackRepository {
     await prisma.track.deleteMany({ where: { id: { in: ids } } });
   }
 
-  async findStuckTracks(statuses: TrackStatusEnum[], createdBefore: number): Promise<Track[]> {
+  async findStuckTracks(statuses: TrackStatusEnum[], updatedBefore: number): Promise<Track[]> {
     const tracks = await prisma.track.findMany({
       where: {
         status: { in: statuses },
-        createdAt: { lt: BigInt(createdBefore) },
+        updatedAt: { lt: BigInt(updatedBefore) },
       },
       include: { playlist: true },
     });
@@ -135,6 +140,7 @@ export class PrismaTrackRepository implements TrackRepository {
       status: toTrackStatus(track.status),
       error: track.error ?? undefined,
       createdAt: track.createdAt ? Number(track.createdAt) : undefined,
+      updatedAt: track.updatedAt ? Number(track.updatedAt) : undefined,
       completedAt: track.completedAt ? Number(track.completedAt) : undefined,
       playlistId: track.playlistId ?? undefined,
       playlistIndex: track.playlistIndex ?? undefined,

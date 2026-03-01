@@ -6,7 +6,7 @@ import { TrackService } from "../../services/track.service";
 export class RetryPlaylistDownloadsUseCase {
   constructor(
     private readonly playlistRepository: PlaylistRepository,
-    private readonly trackService: TrackService,
+    private readonly getTrackService: () => TrackService,
   ) {}
 
   async execute(id: string): Promise<void> {
@@ -15,10 +15,10 @@ export class RetryPlaylistDownloadsUseCase {
       throw new AppError(404, "playlist_not_found");
     }
 
-    const tracks = await this.trackService.getAllByPlaylist(id);
+    const tracks = await this.getTrackService().getAllByPlaylist(id);
     for (const track of tracks) {
       if (track.status === TrackStatusEnum.Error && track.id) {
-        await this.trackService.retry(track.id);
+        await this.getTrackService().retry(track.id);
       }
     }
   }

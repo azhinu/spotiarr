@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { AppError } from "@/domain/errors/app-error";
+import { logger } from "@/infrastructure/utils/logger";
 import { getEnv } from "../setup/environment";
 
 let trackDownloadQueue: Queue;
@@ -26,7 +27,7 @@ export function initializeQueues(): void {
     },
   });
 
-  console.log("✅ BullMQ queues initialized");
+  logger.log("✅ BullMQ queues initialized");
 }
 
 export function getTrackDownloadQueue(): Queue {

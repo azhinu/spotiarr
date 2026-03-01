@@ -2,6 +2,7 @@ import { TrackStatusEnum, type IPlaylist, type ITrack } from "@spotiarr/shared";
 import * as fs from "fs";
 import * as path from "path";
 import { SettingsService } from "@/application/services/settings.service";
+import { logger } from "@/infrastructure/utils/logger";
 import { getErrorMessage } from "../utils/error.utils";
 import { FileSystemTrackPathService } from "./file-system-track-path.service";
 
@@ -33,7 +34,7 @@ export class FileSystemM3uService {
       const completedTracks = tracks.filter((track) => track.status === TrackStatusEnum.Completed);
 
       if (completedTracks.length === 0) {
-        console.warn(`No completed tracks for playlist "${playlist.name}"`);
+        logger.warn(`No completed tracks for playlist "${playlist.name}"`);
         return;
       }
 
@@ -46,9 +47,9 @@ export class FileSystemM3uService {
       // Write the M3U8 file
       fs.writeFileSync(m3uFilePath, m3uContent, "utf-8");
 
-      console.debug(`M3U playlist generated: ${m3uFilePath} (${completedTracks.length} tracks)`);
+      logger.debug(`M3U playlist generated: ${m3uFilePath} (${completedTracks.length} tracks)`);
     } catch (error) {
-      console.error(`Failed to generate M3U file: ${getErrorMessage(error)}`);
+      logger.error(`Failed to generate M3U file: ${getErrorMessage(error)}`);
     }
   }
 

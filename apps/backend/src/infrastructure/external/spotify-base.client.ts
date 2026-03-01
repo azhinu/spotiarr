@@ -1,4 +1,5 @@
 import { SettingsService } from "@/application/services/settings.service";
+import { logger } from "@/infrastructure/utils/logger";
 import { getEnv } from "../setup/environment";
 import { SpotifyAuthService } from "./spotify-auth.service";
 import { SpotifyHttpClient } from "./spotify-http.client";
@@ -22,8 +23,8 @@ export abstract class SpotifyBaseClient extends SpotifyHttpClient {
 
   protected log(message: string, level: "debug" | "error" | "warn" = "debug") {
     const prefix = `[${this.contextName}]`;
-    if (level === "error") console.error(prefix, message);
-    else if (level === "warn") console.warn(prefix, message);
-    else if (getEnv().NODE_ENV === "development") console.log(prefix, message);
+    if (level === "error") logger.error(prefix, message);
+    else if (level === "warn") logger.warn(prefix, message);
+    else if (getEnv().NODE_ENV === "development") logger.log(prefix, message);
   }
 }

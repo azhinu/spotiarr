@@ -1,7 +1,7 @@
 import { TrackStatusEnum, type ITrack } from "@spotiarr/shared";
 import { UnrecoverableError, Worker } from "bullmq";
-import { emitSseEvent } from "@/presentation/routes/events.routes";
 import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
+import { logger } from "@/infrastructure/utils/logger";
 import { container } from "../../container";
 import { getEnv } from "../setup/environment";
 
@@ -19,19 +19,21 @@ function getRandomDelay(): number {
 
 export async function createTrackDownloadWorker() {
   const maxPerMinute = await settingsService.getNumber("YT_DOWNLOADS_PER_MINUTE");
+  const concurrencySetting = await settingsService.getNumber("YT_SEARCH_CONCURRENCY");
+  const concurrency = concurrencySetting || 1;
 
   const worker = new Worker(
     "track-download-processor",
     async (job) => {
       const track: ITrack = job.data;
-      console.log(
+      logger.log(
         `[TrackDownloadWorker] Starting download job ${job.id} for: ${track.artist} - ${track.name}`,
       );
       // Rate limit is handled natively by BullMQ now using the limiter option below
       try {
         await trackService.downloadFromYoutube(track);
       } catch (error) {
-        console.error(
+        logger.error(
           `[TrackDownloadWorker] Download failed for ${track.artist} - ${track.name}:`,
           error instanceof Error ? error.message : String(error),
         );
@@ -39,20 +41,19 @@ export async function createTrackDownloadWorker() {
         if (error instanceof YoutubeRateLimitError) {
           const delayMs = getRandomDelay();
           const delayMinutes = Math.round(delayMs / 60000);
-          console.warn(
+          logger.warn(
             `[TrackDownloadWorker] YouTube rate-limited. Postponing job ${job.id} by ${delayMinutes} minutes.`,
           );
           // Throw UnrecoverableError with delay to reschedule the job
           const delayUntil = Date.now() + delayMs;
           await job.moveToDelayed(delayUntil, "*");
-          throw new UnrecoverableError(
-            `Rescheduled until ${new Date(delayUntil).toISOString()}`,
-          );
+          throw new UnrecoverableError(`Rescheduled until ${new Date(delayUntil).toISOString()}`);
         }
         throw error;
       }
     },
     {
+      concurrency,
       connection: {
         host: getEnv().REDIS_HOST,
         port: getEnv().REDIS_PORT,
@@ -65,35 +66,35 @@ export async function createTrackDownloadWorker() {
   );
 
   worker.on("completed", (job) => {
-    console.log(`[TrackDownloadWorker] Job ${job.id} completed`);
+    logger.log(`[TrackDownloadWorker] Job ${job.id} completed`);
   });
 
   worker.on("drained", async () => {
-    console.log(`[TrackDownloadWorker] Queue drained, triggering library scan...`);
+    logger.log(`[TrackDownloadWorker] Queue drained, triggering library scan...`);
     try {
       await container.libraryService.scan();
-      container.eventsController.emit("library-updated");
-      console.log(`[TrackDownloadWorker] Library scan completed successfully.`);
+      container.eventBus.emit("library-updated");
+      logger.log(`[TrackDownloadWorker] Library scan completed successfully.`);
     } catch (err) {
-      console.error(`[TrackDownloadWorker] Failed to scan library after queue drain:`, err);
+      logger.error(`[TrackDownloadWorker] Failed to scan library after queue drain:`, err);
     }
   });
 
   worker.on("failed", async (job, err) => {
-    console.error(`[TrackDownloadWorker] Job ${job?.id} failed:`, err);
+    logger.error(`[TrackDownloadWorker] Job ${job?.id} failed:`, err);
 
     if (job?.data?.id) {
       const track: ITrack = job.data;
       const trackId = track.id;
 
       if (!trackId) {
-        console.error("Cannot update track status: track.id is undefined");
+        logger.error("Cannot update track status: track.id is undefined");
         return;
       }
 
       // Don't mark as error if job was just rescheduled due to rate limit
       if (err instanceof UnrecoverableError && err.message.includes("Rescheduled")) {
-        console.log(`[TrackDownloadWorker] Job ${job.id} rescheduled for later`);
+        logger.log(`[TrackDownloadWorker] Job ${job.id} rescheduled for later`);
         return;
       }
 
@@ -103,13 +104,15 @@ export async function createTrackDownloadWorker() {
           status: TrackStatusEnum.Error,
           error: err instanceof Error ? err.message : String(err),
         });
-        container.eventsController.emit("playlists-updated");
+        container.eventBus.emit("playlists-updated");
       } catch (updateError) {
-        console.error(`Failed to update track ${trackId} status after job failure:`, updateError);
+        logger.error(`Failed to update track ${trackId} status after job failure:`, updateError);
       }
     }
   });
 
-  console.log(`✅ Track download worker initialized (Rate limit: ${maxPerMinute}/min)`);
+  logger.log(
+    `✅ Track download worker initialized (Concurrency: ${concurrency}, Rate limit: ${maxPerMinute}/min)`,
+  );
   return worker;
 }

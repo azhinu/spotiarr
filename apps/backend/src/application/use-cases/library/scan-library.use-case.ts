@@ -2,6 +2,7 @@ import { TrackStatusEnum, type LibraryArtist, type LibraryScanResult } from "@sp
 import { TrackRepository } from "@/domain/repositories/track.repository";
 import { FileSystemScannerService } from "@/infrastructure/services/file-system-scanner.service";
 import { FileSystemTrackPathService } from "@/infrastructure/services/file-system-track-path.service";
+import { logger } from "@/infrastructure/utils/logger";
 
 export class ScanLibraryUseCase {
   constructor(
@@ -14,7 +15,7 @@ export class ScanLibraryUseCase {
     const startTime = Date.now();
     const libraryPath = this.pathService.getMusicLibraryPath();
 
-    console.log(`🔍 Scanning music library at: ${libraryPath}`);
+    logger.log(`🔍 Scanning music library at: ${libraryPath}`);
 
     const artists = await this.scannerService.scanMusicLibrary(libraryPath);
 
@@ -51,7 +52,7 @@ export class ScanLibraryUseCase {
           }
         }
       } catch (err) {
-        console.warn("Failed to attach track durations from database:", err);
+        logger.warn("Failed to attach track durations from database:", err);
       }
     }
 
@@ -62,11 +63,11 @@ export class ScanLibraryUseCase {
 
     const scanDuration = Date.now() - startTime;
 
-    console.log(`✅ Library scan completed in ${scanDuration}ms`);
-    console.log(`   Found: ${totalArtists} artists, ${totalAlbums} albums, ${totalTracks} tracks`);
-    console.log(`   Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+    logger.log(`✅ Library scan completed in ${scanDuration}ms`);
+    logger.log(`   Found: ${totalArtists} artists, ${totalAlbums} albums, ${totalTracks} tracks`);
+    logger.log(`   Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
     if (this.trackRepository) {
-      console.log(
+      logger.log(
         `   DB sync: matched ${syncResult.matched}, updated ${syncResult.updated}, imported ${syncResult.imported}, removed ${syncResult.removed}`,
       );
     }
@@ -154,9 +155,7 @@ export class ScanLibraryUseCase {
         matched += 1;
 
         const needsUpdate =
-          dbTrack.status !== TrackStatusEnum.Completed ||
-          !dbTrack.completedAt ||
-          !!dbTrack.error;
+          dbTrack.status !== TrackStatusEnum.Completed || !dbTrack.completedAt || !!dbTrack.error;
 
         if (needsUpdate) {
           await this.trackRepository.update(dbTrack.id, {

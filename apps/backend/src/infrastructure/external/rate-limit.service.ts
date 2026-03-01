@@ -1,19 +1,14 @@
+import { logger } from "@/infrastructure/utils/logger";
+import { MusicServiceKey } from "./external.constants";
+
 /**
  * RateLimitService - Centralized rate limit management for all music sources
  * Tracks blocking state per service with exponential backoff on repeated errors
  */
 
-export type ServiceKey =
-  | "soundcloud:search"
-  | "soundcloud:download"
-  | "youtube:search"
-  | "youtube:download";
+export type ServiceKey = MusicServiceKey;
 
-export type ErrorType =
-  | "RATE_LIMIT_429"
-  | "FORBIDDEN_403"
-  | "CONNECTION_TIMEOUT"
-  | "UNKNOWN";
+export type ErrorType = "RATE_LIMIT_429" | "FORBIDDEN_403" | "CONNECTION_TIMEOUT" | "UNKNOWN";
 
 interface RateLimitState {
   blockedUntil: number | null;
@@ -27,13 +22,13 @@ interface RateLimitState {
 function getTimeoutConfig(serviceKey: ServiceKey, errorType: ErrorType) {
   const config: Record<ServiceKey, Record<ErrorType, { min: number; max: number }>> = {
     // SoundCloud
-    "soundcloud:search": {
+    [MusicServiceKey.SoundCloudSearch]: {
       RATE_LIMIT_429: { min: 30_000, max: 90_000 }, // 30-90 sec
       FORBIDDEN_403: { min: 30 * 60_000, max: 90 * 60_000 }, // 30-90 min
       CONNECTION_TIMEOUT: { min: 30 * 60_000, max: 90 * 60_000 }, // 30-90 min
       UNKNOWN: { min: 30 * 60_000, max: 90 * 60_000 }, // 30-90 min
     },
-    "soundcloud:download": {
+    [MusicServiceKey.SoundCloudDownload]: {
       RATE_LIMIT_429: { min: 30_000, max: 90_000 }, // 30-90 sec
       FORBIDDEN_403: { min: 30 * 60_000, max: 90 * 60_000 }, // 30-90 min
       CONNECTION_TIMEOUT: { min: 30 * 60_000, max: 90 * 60_000 }, // 30-90 min
@@ -41,13 +36,13 @@ function getTimeoutConfig(serviceKey: ServiceKey, errorType: ErrorType) {
     },
 
     // YouTube
-    "youtube:search": {
+    [MusicServiceKey.YoutubeSearch]: {
       RATE_LIMIT_429: { min: 10 * 60_000, max: 30 * 60_000 }, // 10-30 min
       FORBIDDEN_403: { min: 10 * 60_000, max: 30 * 60_000 }, // 10-30 min
       CONNECTION_TIMEOUT: { min: 10 * 60_000, max: 30 * 60_000 }, // 10-30 min
       UNKNOWN: { min: 10 * 60_000, max: 30 * 60_000 }, // 10-30 min
     },
-    "youtube:download": {
+    [MusicServiceKey.YoutubeDownload]: {
       RATE_LIMIT_429: { min: 10 * 60_000, max: 30 * 60_000 }, // 10-30 min
       FORBIDDEN_403: { min: 10 * 60_000, max: 30 * 60_000 }, // 10-30 min
       CONNECTION_TIMEOUT: { min: 10 * 60_000, max: 30 * 60_000 }, // 10-30 min
@@ -68,11 +63,7 @@ function getRandomDelay(min: number, max: number): number {
 /**
  * Calculate exponential backoff delay with exponential factor
  */
-function calculateBackoffDelay(
-  min: number,
-  max: number,
-  retryCount: number,
-): number {
+function calculateBackoffDelay(min: number, max: number, retryCount: number): number {
   // Apply exponential backoff: multiplier = 2^retryCount
   const multiplier = Math.pow(2, Math.min(retryCount, 5)); // Cap at 2^5 = 32x
   const baseDelay = getRandomDelay(min, max);
@@ -88,10 +79,10 @@ export class RateLimitService {
   constructor() {
     // Initialize all service keys
     const services: ServiceKey[] = [
-      "soundcloud:search",
-      "soundcloud:download",
-      "youtube:search",
-      "youtube:download",
+      MusicServiceKey.SoundCloudSearch,
+      MusicServiceKey.SoundCloudDownload,
+      MusicServiceKey.YoutubeSearch,
+      MusicServiceKey.YoutubeDownload,
     ];
 
     for (const service of services) {
@@ -151,18 +142,14 @@ export class RateLimitService {
    * Set a service as blocked due to an error
    * Uses exponential backoff if this is a retry
    */
-  async setBlocked(
-    serviceKey: ServiceKey,
-    errorType: ErrorType = "UNKNOWN",
-  ): Promise<void> {
+  async setBlocked(serviceKey: ServiceKey, errorType: ErrorType = "UNKNOWN"): Promise<void> {
     const state = this.rateLimits.get(serviceKey);
     if (!state) return;
 
     const timeoutConfig = getTimeoutConfig(serviceKey, errorType);
 
     // Check if we're retrying (blockedUntil already exists and has passed)
-    const isRetry =
-      state.blockedUntil !== null && Date.now() >= state.blockedUntil;
+    const isRetry = state.blockedUntil !== null && Date.now() >= state.blockedUntil;
 
     if (isRetry) {
       // This is a retry - increment counter and apply exponential backoff
@@ -179,7 +166,7 @@ export class RateLimitService {
       const duration =
         backoffDelay >= 60000 ? `${durationMinutes} minutes` : `${durationSeconds} seconds`;
 
-      console.warn(
+      logger.warn(
         `[RateLimitService] ${serviceKey} blocked (RETRY #${state.retryCount}) due to ${errorType}. ` +
           `Blocked for ${duration} until ${new Date(state.blockedUntil).toISOString()}`,
       );
@@ -191,10 +178,9 @@ export class RateLimitService {
 
       const durationMinutes = Math.round(delay / 60000);
       const durationSeconds = Math.round(delay / 1000);
-      const duration =
-        delay >= 60000 ? `${durationMinutes} minutes` : `${durationSeconds} seconds`;
+      const duration = delay >= 60000 ? `${durationMinutes} minutes` : `${durationSeconds} seconds`;
 
-      console.warn(
+      logger.warn(
         `[RateLimitService] ${serviceKey} blocked due to ${errorType}. ` +
           `Blocked for ${duration} until ${new Date(state.blockedUntil).toISOString()}`,
       );
@@ -214,7 +200,7 @@ export class RateLimitService {
     state.retryCount = 0;
     state.lastErrorType = undefined;
 
-    console.log(`[RateLimitService] Block cleared for ${serviceKey}`);
+    logger.log(`[RateLimitService] Block cleared for ${serviceKey}`);
   }
 
   /**

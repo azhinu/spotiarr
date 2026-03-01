@@ -10,6 +10,7 @@ import { TrackRepository } from "@/domain/repositories/track.repository";
 import { MultiSourceDownloadService } from "@/infrastructure/external/multi-source-download.service";
 import { FileSystemTrackPathService } from "@/infrastructure/services/file-system-track-path.service";
 import { getErrorMessage } from "@/infrastructure/utils/error.utils";
+import { logger } from "@/infrastructure/utils/logger";
 import { TrackPostProcessingService } from "../../services/track-post-processing.service";
 
 export class DownloadTrackUseCase {
@@ -50,7 +51,7 @@ export class DownloadTrackUseCase {
         throw err;
       }
 
-      console.error(
+      logger.error(
         `Failed to download track: ${track.artist} - ${track.name}`,
         getErrorMessage(err),
       );
@@ -90,7 +91,7 @@ export class DownloadTrackUseCase {
   private validateTrack(track: ITrack): void {
     if (!track.name || !track.artist) {
       const errorMsg = `Track field is null or undefined: name=${track.name}, artist=${track.artist}`;
-      console.error(errorMsg);
+      logger.error(errorMsg);
       throw new AppError(400, "internal_server_error", errorMsg);
     }
   }
@@ -110,9 +111,13 @@ export class DownloadTrackUseCase {
 
     // 2. Post-Processing (Metadata, Covers, M3U)
     // Delegated to dedicated service to keep Use Case clean
-    console.debug(`[DownloadTrackUseCase] Starting post-processing for ${track.artist} - ${track.name}`);
+    logger.debug(
+      `[DownloadTrackUseCase] Starting post-processing for ${track.artist} - ${track.name}`,
+    );
     await this.trackPostProcessingService.process(track, trackFilePath);
-    console.debug(`[DownloadTrackUseCase] Post-processing completed for ${track.artist} - ${track.name}`);
+    logger.debug(
+      `[DownloadTrackUseCase] Post-processing completed for ${track.artist} - ${track.name}`,
+    );
 
     // 3. Create symlink in playlist folder if this is a playlist download
     if (track.playlistId) {
@@ -147,11 +152,9 @@ export class DownloadTrackUseCase {
       const relativePath = path.relative(symlinkDirectory, targetPath);
       fs.symlinkSync(relativePath, symlinkPath);
 
-      console.log(
-        `Created symlink for playlist "${playlistName}": ${symlinkPath} -> ${targetPath}`,
-      );
+      logger.log(`Created symlink for playlist "${playlistName}": ${symlinkPath} -> ${targetPath}`);
     } catch (err) {
-      console.error(
+      logger.error(
         `Failed to create symlink for track in playlist "${playlistName}":`,
         getErrorMessage(err),
       );

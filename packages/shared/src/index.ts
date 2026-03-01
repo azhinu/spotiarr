@@ -83,6 +83,7 @@ export interface ITrack {
   status?: TrackStatusEnum;
   error?: string;
   createdAt?: number;
+  updatedAt?: number;
   completedAt?: number;
   playlistId?: string;
   playlistIndex?: number;

@@ -1,9 +1,10 @@
 import { TrackStatusEnum, type ITrack } from "@spotiarr/shared";
-import { EventBus } from "@/domain/events/event-bus";
 import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
+import { EventBus } from "@/domain/events/event-bus";
 import { TrackRepository } from "@/domain/repositories/track.repository";
 import type { TrackQueueService } from "@/domain/services/track-queue.service";
 import { YoutubeSearchService } from "@/infrastructure/external/youtube-search.service";
+import { logger } from "@/infrastructure/utils/logger";
 import { SettingsService } from "../../services/settings.service";
 
 export class SearchTrackOnYoutubeUseCase {
@@ -41,7 +42,7 @@ export class SearchTrackOnYoutubeUseCase {
         throw error;
       }
 
-      console.error(
+      logger.error(
         `Failed to find track on YouTube: ${existingTrack.artist} - ${existingTrack.name}`,
         error instanceof Error ? error.stack : String(error),
       );

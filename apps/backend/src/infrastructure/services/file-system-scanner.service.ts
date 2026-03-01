@@ -2,6 +2,7 @@ import type { LibraryAlbum, LibraryArtist, LibraryTrack } from "@spotiarr/shared
 import { SUPPORTED_AUDIO_FORMATS } from "@spotiarr/shared";
 import fs from "fs/promises";
 import path from "path";
+import { logger } from "@/infrastructure/utils/logger";
 
 export class FileSystemScannerService {
   private readonly audioExtensions = SUPPORTED_AUDIO_FORMATS.map((ext) => `.${ext}`);
@@ -35,7 +36,7 @@ export class FileSystemScannerService {
 
       return artists;
     } catch (error) {
-      console.error(`Error scanning music library at ${libraryPath}:`, error);
+      logger.error(`Error scanning music library at ${libraryPath}:`, error);
       return [];
     }
   }
@@ -81,7 +82,7 @@ export class FileSystemScannerService {
         albums,
       };
     } catch (error) {
-      console.error(`Error scanning artist ${artistName}:`, error);
+      logger.error(`Error scanning artist ${artistName}:`, error);
       return null;
     }
   }
@@ -144,7 +145,7 @@ export class FileSystemScannerService {
         tracks,
       };
     } catch (error) {
-      console.error(`Error scanning album ${albumName}:`, error);
+      logger.error(`Error scanning album ${albumName}:`, error);
       return null;
     }
   }
@@ -199,7 +200,7 @@ export class FileSystemScannerService {
           duration = Math.round(metadata.format.duration);
         }
       } catch (err) {
-        console.warn(`Failed to read metadata for ${fileName}:`, err);
+        logger.warn(`Failed to read metadata for ${fileName}:`, err);
       }
 
       return {
@@ -216,7 +217,7 @@ export class FileSystemScannerService {
         modifiedAt: stats.mtimeMs,
       };
     } catch (error) {
-      console.error(`Error scanning track ${fileName}:`, error);
+      logger.error(`Error scanning track ${fileName}:`, error);
       return null;
     }
   }

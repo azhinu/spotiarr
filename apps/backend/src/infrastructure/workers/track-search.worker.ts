@@ -1,6 +1,7 @@
 import { type ITrack } from "@spotiarr/shared";
 import { UnrecoverableError, Worker } from "bullmq";
 import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
+import { logger } from "@/infrastructure/utils/logger";
 import { container } from "../../container";
 import { getEnv } from "../setup/environment";
 
@@ -31,15 +32,13 @@ export async function createTrackSearchWorker() {
         if (error instanceof YoutubeRateLimitError) {
           const delayMs = getRandomDelay();
           const delayMinutes = Math.round(delayMs / 60000);
-          console.warn(
+          logger.warn(
             `[TrackSearchWorker] YouTube rate-limited. Postponing job ${job.id} by ${delayMinutes} minutes.`,
           );
           // Throw UnrecoverableError with delay to reschedule the job
           const delayUntil = Date.now() + delayMs;
           await job.moveToDelayed(delayUntil, "*");
-          throw new UnrecoverableError(
-            `Rescheduled until ${new Date(delayUntil).toISOString()}`,
-          );
+          throw new UnrecoverableError(`Rescheduled until ${new Date(delayUntil).toISOString()}`);
         }
         throw error;
       }
@@ -54,18 +53,18 @@ export async function createTrackSearchWorker() {
   );
 
   worker.on("completed", (job) => {
-    console.log(`[TrackSearchWorker] Job ${job.id} completed`);
+    logger.log(`[TrackSearchWorker] Job ${job.id} completed`);
   });
 
   worker.on("failed", (job, err) => {
-    console.error(`[TrackSearchWorker] Job ${job?.id} failed:`, err);
+    logger.error(`[TrackSearchWorker] Job ${job?.id} failed:`, err);
 
     // Don't log as error if job was just rescheduled due to rate limit
     if (err instanceof UnrecoverableError && err.message.includes("Rescheduled")) {
-      console.log(`[TrackSearchWorker] Job ${job?.id} rescheduled for later`);
+      logger.log(`[TrackSearchWorker] Job ${job?.id} rescheduled for later`);
     }
   });
 
-  console.log(`✅ Track search worker initialized (Concurrency: ${concurrency || 3})`);
+  logger.log(`✅ Track search worker initialized (Concurrency: ${concurrency || 3})`);
   return worker;
 }

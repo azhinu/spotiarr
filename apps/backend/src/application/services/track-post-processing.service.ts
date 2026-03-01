@@ -8,6 +8,7 @@ import { FileSystemM3uService } from "@/infrastructure/services/file-system-m3u.
 import { FileSystemTrackPathService } from "@/infrastructure/services/file-system-track-path.service";
 import { MetadataService } from "@/infrastructure/services/metadata.service";
 import { getErrorMessage } from "@/infrastructure/utils/error.utils";
+import { logger } from "@/infrastructure/utils/logger";
 
 export class TrackPostProcessingService {
   constructor(
@@ -25,14 +26,18 @@ export class TrackPostProcessingService {
    */
   async process(track: ITrack, trackFilePath: string): Promise<void> {
     try {
-      console.log(`[PostProcessing] Starting metadata enrichment for: ${track.artist} - ${track.name}`);
-      console.log(`[PostProcessing] Available URLs - trackUrl: ${track.trackUrl || 'none'}, spotifyUrl: ${track.spotifyUrl || 'none'}`);
+      logger.log(
+        `[PostProcessing] Starting metadata enrichment for: ${track.artist} - ${track.name}`,
+      );
+      logger.log(
+        `[PostProcessing] Available URLs - trackUrl: ${track.trackUrl || "none"}, spotifyUrl: ${track.spotifyUrl || "none"}`,
+      );
 
       const { playlistCoverUrl, isPlaylistType } = await this.getPlaylistCoverInfo(track);
       const spotifyTrackMetadata = await this.getSpotifyTrackMetadata(track);
 
       if (spotifyTrackMetadata) {
-        console.log(`[PostProcessing] ✓ Spotify metadata received:`, {
+        logger.log(`[PostProcessing] ✓ Spotify metadata received:`, {
           name: spotifyTrackMetadata.name,
           artist: spotifyTrackMetadata.artist,
           album: spotifyTrackMetadata.album,
@@ -40,10 +45,10 @@ export class TrackPostProcessingService {
           trackNumber: spotifyTrackMetadata.trackNumber,
           discNumber: spotifyTrackMetadata.discNumber,
           totalTracks: spotifyTrackMetadata.totalTracks,
-          hasCover: !!spotifyTrackMetadata.albumCoverUrl
+          hasCover: !!spotifyTrackMetadata.albumCoverUrl,
         });
       } else {
-        console.warn(`[PostProcessing] ✗ No Spotify metadata available, using track data as-is`);
+        logger.warn(`[PostProcessing] ✗ No Spotify metadata available, using track data as-is`);
       }
 
       const title = spotifyTrackMetadata?.name ?? track.name;
@@ -67,7 +72,7 @@ export class TrackPostProcessingService {
         coverUrl: trackCoverUrl || playlistCoverUrl || "",
       });
 
-      console.log(`[PostProcessing] ✓ ID3 tags written successfully to ${trackFilePath}`);
+      logger.log(`[PostProcessing] ✓ ID3 tags written successfully to ${trackFilePath}`);
 
       // 2. Save folder cover.jpg
       const trackDirectory = path.dirname(trackFilePath);
@@ -80,7 +85,7 @@ export class TrackPostProcessingService {
       // 3. Save Artist Image (if applicable)
       await this.saveArtistImageIfNeeded(track);
     } catch (error) {
-      console.error(
+      logger.error(
         `Error during post-processing for track ${track.name}: ${getErrorMessage(error)}`,
       );
       // We don't throw here to avoid failing the whole download if just metadata fails
@@ -107,10 +112,10 @@ export class TrackPostProcessingService {
         await this.m3uService.generateM3uFile(playlist, playlistTracks, playlistFolderPath);
 
         const completedCount = this.m3uService.getCompletedTracksCount(playlistTracks);
-        console.debug(`Playlist M3U updated: ${completedCount}/${playlistTracks.length} tracks`);
+        logger.debug(`Playlist M3U updated: ${completedCount}/${playlistTracks.length} tracks`);
       }
     } catch (err) {
-      console.error(`Failed to generate M3U file: ${getErrorMessage(err)}`);
+      logger.error(`Failed to generate M3U file: ${getErrorMessage(err)}`);
     }
   }
 
@@ -139,40 +144,50 @@ export class TrackPostProcessingService {
       (track.spotifyUrl && track.spotifyUrl.includes("/track/") ? track.spotifyUrl : undefined);
 
     if (spotifyTrackUrl) {
-      console.log(`[PostProcessing] Fetching Spotify metadata from URL: ${spotifyTrackUrl}`);
-      
+      logger.log(`[PostProcessing] Fetching Spotify metadata from URL: ${spotifyTrackUrl}`);
+
       try {
         const details = await this.spotifyService.getPlaylistDetail(spotifyTrackUrl);
         const trackData = details.tracks[0] ?? null;
-        
+
         if (trackData) {
           return trackData;
         }
-        
-        console.warn(`[PostProcessing] Spotify returned empty tracks array for ${spotifyTrackUrl}`);
+
+        logger.warn(`[PostProcessing] Spotify returned empty tracks array for ${spotifyTrackUrl}`);
       } catch (error) {
-        console.error(`[PostProcessing] Failed to fetch Spotify metadata from URL ${spotifyTrackUrl}: ${getErrorMessage(error)}`);
+        logger.error(
+          `[PostProcessing] Failed to fetch Spotify metadata from URL ${spotifyTrackUrl}: ${getErrorMessage(error)}`,
+        );
       }
     } else {
-      console.log(`[PostProcessing] No trackUrl available, trying Spotify search for: ${track.artist} - ${track.name}`);
+      logger.log(
+        `[PostProcessing] No trackUrl available, trying Spotify search for: ${track.artist} - ${track.name}`,
+      );
     }
 
     // Fallback: search by artist and track name
     try {
       const searchQuery = `${track.artist} ${track.name}`;
-      console.log(`[PostProcessing] Searching Spotify for: "${searchQuery}"`);
-      
-      const searchResults = await this.spotifyService.searchCatalog(searchQuery, ["track"], { track: 1 });
-      
+      logger.log(`[PostProcessing] Searching Spotify for: "${searchQuery}"`);
+
+      const searchResults = await this.spotifyService.searchCatalog(searchQuery, ["track"], {
+        track: 1,
+      });
+
       if (searchResults.tracks && searchResults.tracks.length > 0) {
         const foundTrack = searchResults.tracks[0];
-        console.log(`[PostProcessing] ✓ Found track via search: ${foundTrack.artist} - ${foundTrack.name}`);
+        logger.log(
+          `[PostProcessing] ✓ Found track via search: ${foundTrack.artist} - ${foundTrack.name}`,
+        );
         return foundTrack;
       } else {
-        console.warn(`[PostProcessing] No results from Spotify search for "${searchQuery}"`);
+        logger.warn(`[PostProcessing] No results from Spotify search for "${searchQuery}"`);
       }
     } catch (error) {
-      console.error(`[PostProcessing] Failed to search Spotify for track ${track.name}: ${getErrorMessage(error)}`);
+      logger.error(
+        `[PostProcessing] Failed to search Spotify for track ${track.name}: ${getErrorMessage(error)}`,
+      );
     }
 
     return null;
@@ -200,7 +215,7 @@ export class TrackPostProcessingService {
         );
       }
     } catch (error) {
-      console.warn(`Failed to save artist image: ${getErrorMessage(error)}`);
+      logger.warn(`Failed to save artist image: ${getErrorMessage(error)}`);
     }
   }
 }

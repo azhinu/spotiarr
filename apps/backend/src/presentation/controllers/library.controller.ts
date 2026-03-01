@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { LibraryService } from "@/application/services/library.service";
+import { logger } from "@/infrastructure/utils/logger";
 
 export class LibraryController {
   constructor(private readonly libraryService: LibraryService) {}
@@ -9,7 +10,7 @@ export class LibraryController {
       const stats = await this.libraryService.getStats();
       res.json({ data: stats });
     } catch (error) {
-      console.error("Error getting library stats:", error);
+      logger.error("Error getting library stats:", error);
       res.status(500).json({
         error: "internal_server_error",
         message: error instanceof Error ? error.message : "Failed to get library stats",
@@ -22,7 +23,7 @@ export class LibraryController {
       const artists = await this.libraryService.getArtists();
       res.json({ data: artists });
     } catch (error) {
-      console.error("Error getting artists:", error);
+      logger.error("Error getting artists:", error);
       res.status(500).json({
         error: "internal_server_error",
         message: error instanceof Error ? error.message : "Failed to get artists",
@@ -45,7 +46,7 @@ export class LibraryController {
 
       res.json({ data: artist });
     } catch (error) {
-      console.error("Error getting artist:", error);
+      logger.error("Error getting artist:", error);
       res.status(500).json({
         error: "internal_server_error",
         message: error instanceof Error ? error.message : "Failed to get artist",
@@ -67,7 +68,7 @@ export class LibraryController {
 
       res.sendFile(imagePath, (err) => {
         if (err) {
-          console.error(`Error sending file ${imagePath}:`, err);
+          logger.error(`Error sending file ${imagePath}:`, err);
           if (!res.headersSent) {
             res.status(404).json({
               error: "file_not_found",
@@ -77,7 +78,7 @@ export class LibraryController {
         }
       });
     } catch (error) {
-      console.error("Error serving image:", error);
+      logger.error("Error serving image:", error);
       res.status(500).json({
         error: "internal_server_error",
         message: error instanceof Error ? error.message : "Failed to serve image",
@@ -90,7 +91,7 @@ export class LibraryController {
       const result = await this.libraryService.scan();
       res.json({ data: result });
     } catch (error) {
-      console.error("Error scanning library:", error);
+      logger.error("Error scanning library:", error);
       res.status(500).json({
         error: "internal_server_error",
         message: error instanceof Error ? error.message : "Failed to scan library",

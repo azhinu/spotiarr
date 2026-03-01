@@ -1,8 +1,13 @@
 import { EventEmitter } from "events";
-import { container } from "@/container";
 import type { EventBus } from "@/domain/events/event-bus";
 
 export class AppEventBus extends EventEmitter implements EventBus {
+  private sseEmitter?: (event: string, data?: unknown) => void;
+
+  setSseEmitter(emitter: (event: string, data?: unknown) => void): void {
+    this.sseEmitter = emitter;
+  }
+
   // Override emit to send to both internal listeners and SSE
   emit(event: string, data?: unknown): boolean {
     // 1. Emit to internal Node.js listeners
@@ -10,7 +15,7 @@ export class AppEventBus extends EventEmitter implements EventBus {
 
     // 2. Emit to Frontend via SSE
     // (We only send data if it's serializable, which it usually is in this app)
-    container.eventsController.emit(event, data);
+    this.sseEmitter?.(event, data);
 
     return result;
   }

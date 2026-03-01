@@ -1,3 +1,5 @@
+import { logger } from "@/infrastructure/utils/logger";
+
 const MIN_BLOCK_MS = 3 * 60 * 1000; // 3 minutes
 const MAX_BLOCK_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -62,7 +64,7 @@ export class YoutubeRateLimitService {
     const blockUntil = Date.now() + blockDuration;
     rateLimitBlockedUntil = blockUntil;
     const durationMinutes = Math.round(blockDuration / 60000);
-    console.warn(
+    logger.warn(
       `[YoutubeRateLimitService] YouTube rate limited. Blocked for ${durationMinutes} minutes until ${new Date(blockUntil).toISOString()}`,
     );
   }
@@ -72,7 +74,6 @@ export class YoutubeRateLimitService {
    */
   async clearRateLimit(): Promise<void> {
     rateLimitBlockedUntil = null;
-    console.log("[YoutubeRateLimitService] Rate limit cleared");
+    logger.log("[YoutubeRateLimitService] Rate limit cleared");
   }
 }
-

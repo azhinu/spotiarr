@@ -1,4 +1,5 @@
 import { TrackStatusEnum, type TrackArtist } from "@spotiarr/shared";
+import { logger } from "@/infrastructure/utils/logger";
 
 /**
  * Type-safe helpers for Prisma JSON field conversions
@@ -17,7 +18,7 @@ export function trackArtistsToJson(artists: TrackArtist[] | undefined | null): s
   try {
     return JSON.stringify(artists);
   } catch (e) {
-    console.error("Error serializing artists", e);
+    logger.error("Error serializing artists", e);
     return null;
   }
 }
@@ -39,7 +40,7 @@ export function jsonToTrackArtists(jsonString: unknown): TrackArtist[] | undefin
 
     // Type guard to validate the structure
     if (!Array.isArray(json)) {
-      console.warn("Invalid artists JSON format: expected array", json);
+      logger.warn("Invalid artists JSON format: expected array", json);
       return undefined;
     }
 
@@ -51,13 +52,13 @@ export function jsonToTrackArtists(jsonString: unknown): TrackArtist[] | undefin
     };
 
     if (!json.every(isValidArtist)) {
-      console.warn("Invalid artist object in array", json);
+      logger.warn("Invalid artist object in array", json);
       return undefined;
     }
 
     return json as TrackArtist[];
   } catch (e) {
-    console.error("Error parsing artists JSON", e);
+    logger.error("Error parsing artists JSON", e);
     return undefined;
   }
 }
@@ -85,6 +86,6 @@ export function toTrackStatus(status: unknown): TrackStatusEnum {
     }
   }
 
-  console.warn(`Invalid track status: ${status}, defaulting to 'new'`);
+  logger.warn(`Invalid track status: ${status}, defaulting to 'new'`);
   return TrackStatusEnum.New;
 }

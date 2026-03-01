@@ -3,16 +3,15 @@ import { YtDlp } from "ytdlp-nodejs";
 import { SettingsService } from "@/application/services/settings.service";
 import { AppError } from "@/domain/errors/app-error";
 import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
-import { RateLimitService, type ErrorType } from "./rate-limit.service";
+import { getErrorMessage } from "@/infrastructure/utils/error.utils";
+import { logger } from "@/infrastructure/utils/logger";
+import { classifyYoutubeDownloadError } from "./external-error-classifier.utils";
+import { DEFAULT_EXTERNAL_HEADERS, MusicServiceKey } from "./external.constants";
+import { RateLimitService } from "./rate-limit.service";
 import { YoutubeSearchService } from "./youtube-search.service";
 
-const HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-};
-
 export class YoutubeDownloadService {
-  private readonly serviceKey = "youtube:download" as const;
+  private readonly serviceKey = MusicServiceKey.YoutubeDownload;
 
   constructor(
     private readonly settingsService: SettingsService,
@@ -21,9 +20,9 @@ export class YoutubeDownloadService {
   ) {}
 
   async downloadAndFormat(track: ITrack, output: string): Promise<void> {
-    console.debug(`Downloading ${track.artist} - ${track.name} (${track.youtubeUrl}) from YT`);
+    logger.debug(`Downloading ${track.artist} - ${track.name} (${track.youtubeUrl}) from YT`);
     if (!track.youtubeUrl) {
-      console.error("youtubeUrl is null or undefined");
+      logger.log("youtubeUrl is null or undefined");
       throw new AppError(400, "internal_server_error", "youtubeUrl is null or undefined");
     }
 
@@ -34,13 +33,13 @@ export class YoutubeDownloadService {
       const message = blockedUntil
         ? `YouTube download is rate-limited until ${new Date(blockedUntil).toISOString()}`
         : "YouTube download is currently rate-limited";
-      console.warn(
+      logger.warn(
         `[YoutubeDownloadService] ${message}. Cannot download: ${track.artist} - ${track.name}`,
       );
       throw new YoutubeRateLimitError(message);
     }
 
-    console.info(
+    logger.info(
       `[YoutubeDownloadService] Starting download from YouTube: ${track.artist} - ${track.name} (${track.youtubeUrl})`,
     );
 
@@ -69,7 +68,7 @@ export class YoutubeDownloadService {
     const isCookieFile = ytCookies && (ytCookies.includes("/") || ytCookies.endsWith(".txt"));
 
     try {
-      console.debug(
+      logger.debug(
         `[YoutubeDownloadService] yt-dlp config: format=${formatType}, quality=${quality}, output=${output}`,
       );
       await ytdlp.downloadAsync(track.youtubeUrl, {
@@ -81,78 +80,28 @@ export class YoutubeDownloadService {
         output,
         cookies: isCookieFile ? ytCookies : undefined,
         cookiesFromBrowser: !isCookieFile && ytCookies ? ytCookies : undefined,
-        headers: HEADERS,
+        headers: DEFAULT_EXTERNAL_HEADERS,
       });
-      console.info(
+      logger.info(
         `[YoutubeDownloadService] ✓ SUCCESS: Downloaded ${track.artist} - ${track.name} from YouTube to ${output}`,
       );
     } catch (error) {
       // Check if this is a YouTube rate-limit error
-      const errorMessage = this.getErrorMessage(error);
-      console.error(
+      const errorMessage = getErrorMessage(error);
+      logger.error(
         `[YoutubeDownloadService] ✗ FAILED: Download error for ${track.artist} - ${track.name}: ${errorMessage}`,
       );
-      const errorClassification = this.classifyError(errorMessage);
+      const errorClassification = classifyYoutubeDownloadError(errorMessage);
 
       if (errorClassification.type === "RATE_LIMITED") {
-        console.error(`[YoutubeDownloadService] 🔴 RATE_LIMITED (429): ${errorMessage}`);
+        logger.error(`[YoutubeDownloadService] 🔴 RATE_LIMITED (429): ${errorMessage}`);
         await this.rateLimitService.setBlocked(this.serviceKey, "RATE_LIMIT_429");
         const blockedUntil = await this.rateLimitService.getBlockedUntil(this.serviceKey);
         const untilTime = blockedUntil ? new Date(blockedUntil).toISOString() : "unknown";
-        console.warn(`[YoutubeDownloadService] Service paused until ${untilTime}`);
+        logger.warn(`[YoutubeDownloadService] Service paused until ${untilTime}`);
         throw new YoutubeRateLimitError(`YouTube rate-limited - paused until ${untilTime}`);
       }
       throw error;
     }
-  }
-
-  /**
-   * Extract error message from various error types
-   */
-  private getErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message;
-    }
-    return String(error);
-  }
-
-  /**
-   * Classify error type for better debugging
-   */
-  private classifyError(
-    error: string,
-  ): { type: string; message: string; errorType?: ErrorType } {
-    // Rate limit errors
-    if (
-      error.includes("rate-limited by YouTube") ||
-      error.includes("rate-limited") ||
-      error.includes("rate limit") ||
-      error.includes("429")
-    ) {
-      return {
-        type: "RATE_LIMITED",
-        message: "YouTube rate limited",
-        errorType: "RATE_LIMIT_429",
-      };
-    }
-
-    // Connection/timeout errors - including yt-dlp specific timeout messages
-    if (
-      error.includes("timeout") ||
-      error.includes("Connection") ||
-      error.includes("read operation timed out") ||
-      error.includes("Giving up after") ||
-      error.includes("ECONNREFUSED") ||
-      error.includes("ENOTFOUND") ||
-      error.includes("getaddrinfo")
-    ) {
-      return {
-        type: "CONNECTION_ERROR",
-        message: "Network connection error or timeout",
-        errorType: "CONNECTION_TIMEOUT",
-      };
-    }
-
-    return { type: "UNKNOWN", message: error };
   }
 }

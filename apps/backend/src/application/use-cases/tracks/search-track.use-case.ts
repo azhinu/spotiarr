@@ -1,9 +1,10 @@
 import { TrackStatusEnum, type ITrack } from "@spotiarr/shared";
-import { EventBus } from "@/domain/events/event-bus";
 import { YoutubeRateLimitError } from "@/domain/errors/youtube-rate-limit.error";
+import { EventBus } from "@/domain/events/event-bus";
 import { TrackRepository } from "@/domain/repositories/track.repository";
 import type { TrackQueueService } from "@/domain/services/track-queue.service";
 import { MultiSourceSearchService } from "@/infrastructure/external/multi-source-search.service";
+import { logger } from "@/infrastructure/utils/logger";
 import { SettingsService } from "../../services/settings.service";
 
 /**
@@ -34,10 +35,15 @@ export class SearchTrackUseCase {
     this.eventBus.emit("playlists-updated");
 
     try {
-      const searchResult = await this.multiSourceSearchService.findTrack(
-        existingTrack.artist,
-        existingTrack.name,
-      );
+      const preferredSource = track.source;
+
+      const searchResult = preferredSource
+        ? await this.multiSourceSearchService.findTrackPreferring(
+            existingTrack.artist,
+            existingTrack.name,
+            preferredSource,
+          )
+        : await this.multiSourceSearchService.findTrack(existingTrack.artist, existingTrack.name);
 
       // Mark as queued with source information
       existingTrack.markAsQueuedWithSource(searchResult.url, searchResult.source);
@@ -47,7 +53,7 @@ export class SearchTrackUseCase {
         throw error;
       }
 
-      console.error(
+      logger.error(
         `Failed to find track on any source: ${existingTrack.artist} - ${existingTrack.name}`,
         error instanceof Error ? error.stack : String(error),
       );
