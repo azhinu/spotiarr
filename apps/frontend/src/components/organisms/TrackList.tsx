@@ -35,7 +35,14 @@ const TrackListItem: FC<TrackListItemProps> = memo(({ track, index, onDownload, 
   }, [track, onDownload]);
 
   return (
-    <div className="group grid grid-cols-[16px_1fr_auto] items-center gap-4 rounded-md px-4 py-2 transition-colors hover:bg-white/10">
+    <div className="group grid grid-cols-[20px_16px_1fr_auto] items-center gap-4 rounded-md px-4 py-2 transition-colors hover:bg-white/10">
+      {/* Downloaded Icon */}
+      <div className="flex w-5 justify-center">
+        {isDownloaded && (
+          <FontAwesomeIcon icon={faCircleCheck} className="text-base text-green-500" />
+        )}
+      </div>
+
       {/* Index / Status Icon */}
       <div className="flex justify-center">
         <TrackStatusIndicator
@@ -73,9 +80,6 @@ const TrackListItem: FC<TrackListItemProps> = memo(({ track, index, onDownload, 
 
       {/* Duration */}
       <div className="text-text-secondary flex items-center justify-end gap-4 text-sm">
-        {isDownloaded && (
-          <FontAwesomeIcon icon={faCircleCheck} className="text-base text-green-500" />
-        )}
         <span>{track.durationMs ? formatDuration(track.durationMs) : "--:--"}</span>
       </div>
     </div>

@@ -50,7 +50,18 @@ const PlaylistTrackItem: FC<PlaylistTrackItemProps> = memo(
     }, []);
 
     return (
-      <div className="group grid grid-cols-[auto_1fr_auto] items-center gap-4 rounded-md px-4 py-2 transition-colors hover:bg-white/10 md:grid-cols-[16px_1fr_1fr_180px]">
+      <div className="group grid grid-cols-[20px_auto_1fr_auto] items-center gap-4 rounded-md px-4 py-2 transition-colors hover:bg-white/10 md:grid-cols-[20px_16px_1fr_1fr_180px]">
+        {/* Downloaded Icon */}
+        <div className="flex w-5 justify-center">
+          {(status ?? track.status) === "completed" && (
+            <FontAwesomeIcon
+              icon={faCircleCheck}
+              className="text-base text-green-500"
+              title={t("common.downloaded")}
+            />
+          )}
+        </div>
+
         {/* Index */}
         <div className="text-text-secondary flex w-4 justify-center text-center text-sm">
           <TrackStatusIndicator
@@ -99,16 +110,9 @@ const PlaylistTrackItem: FC<PlaylistTrackItemProps> = memo(
           )}
         </div>
 
-        {/* Duration & Actions */}
+        {/* Duration */}
         <div className="flex items-center justify-end gap-4">
-          <div className="text-text-secondary flex min-w-[40px] items-center justify-end gap-2 text-right text-sm tabular-nums">
-            {(status ?? track.status) === "completed" && (
-              <FontAwesomeIcon
-                icon={faCircleCheck}
-                className="text-base text-green-500"
-                title={t("common.downloaded")}
-              />
-            )}
+          <div className="text-text-secondary flex min-w-[40px] items-center justify-end text-right text-sm tabular-nums">
             {track.durationMs ? new Date(track.durationMs).toISOString().substr(14, 5) : "--:--"}
           </div>
         </div>
@@ -158,7 +162,8 @@ export const PlaylistTracksList: FC<PlaylistTracksListProps> = ({
   return (
     <div className="flex flex-col pb-4">
       {/* Header */}
-      <div className="text-text-secondary bg-background sticky top-0 z-10 mb-2 grid grid-cols-[auto_1fr_auto] gap-4 border-b border-white/10 px-4 py-2 text-sm font-medium tracking-wider uppercase md:grid-cols-[16px_1fr_1fr_180px]">
+      <div className="text-text-secondary bg-background sticky top-0 z-10 mb-2 grid grid-cols-[20px_auto_1fr_auto] gap-4 border-b border-white/10 px-4 py-2 text-sm font-medium tracking-wider uppercase md:grid-cols-[20px_16px_1fr_1fr_180px]">
+        <div className="w-5"></div>
         <div className="w-4 text-center">#</div>
         <div>{t("common.title")}</div>
         <div className="hidden md:block">{t("common.album")}</div>
