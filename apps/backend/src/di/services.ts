@@ -72,11 +72,7 @@ export interface ApplicationServicesDependencies {
   scanLibraryUseCase: ScanLibraryUseCase;
 }
 
-export const setupApplicationServices = (
-  spotifyService: SpotifyService,
-  useCases: ApplicationServicesDependencies,
-) => {
-  // Services (Post-Processing)
+export const setupCoreServices = (spotifyService: SpotifyService) => {
   trackPostProcessingService = new TrackPostProcessingService(
     spotifyService,
     metadataService,
@@ -85,6 +81,18 @@ export const setupApplicationServices = (
     trackFileHelper,
     m3uService,
   );
+
+  return {
+    trackPostProcessingService,
+  };
+};
+
+export const setupApplicationServices = (useCases: ApplicationServicesDependencies) => {
+  if (!trackPostProcessingService) {
+    throw new Error(
+      "TrackPostProcessingService must be initialized before setupApplicationServices",
+    );
+  }
 
   // Domain Services (Track)
   trackService = new TrackService({
@@ -121,7 +129,5 @@ export const setupApplicationServices = (
     libraryService,
   };
 };
-
-export const getTrackPostProcessingService = () => trackPostProcessingService;
 
 export const getTrackService = () => trackService;

@@ -1,3 +1,4 @@
+import { TrackPostProcessingService } from "@/application/services/track-post-processing.service";
 import { HistoryUseCases } from "@/application/use-cases/history/history.use-cases";
 import { ScanLibraryUseCase } from "@/application/use-cases/library/scan-library.use-case";
 import { CreatePlaylistUseCase } from "@/application/use-cases/playlists/create-playlist.use-case";
@@ -32,7 +33,6 @@ import {
   eventBus,
   trackFileHelper,
   fileSystemScannerService,
-  getTrackPostProcessingService,
   getTrackService,
 } from "./services";
 
@@ -42,6 +42,7 @@ export const setupUseCases = (
   multiSourceDownloadService: any,
   spotifyService: any,
   spotifyUserLibraryService: any,
+  trackPostProcessingService: TrackPostProcessingService,
 ) => {
   // Use Cases - Settings
   const getSettingsUseCase = new GetSettingsUseCase(settingsRepository);
@@ -86,7 +87,6 @@ export const setupUseCases = (
   );
 
   // Use new multi-source download service
-  const trackPostProcessingService = getTrackPostProcessingService();
   const downloadTrackUseCase = new DownloadTrackUseCase(
     trackRepository,
     multiSourceDownloadService,

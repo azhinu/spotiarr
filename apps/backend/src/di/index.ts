@@ -10,6 +10,7 @@ import {
   metadataService,
   m3uService,
   fileSystemScannerService,
+  setupCoreServices,
   setupApplicationServices,
 } from "./services";
 import { setupUseCases } from "./use-cases";
@@ -27,15 +28,18 @@ const spotifyService = new SpotifyService(
   externalServices.spotifyUserLibraryService,
 );
 
+const coreServices = setupCoreServices(spotifyService);
+
 const useCases = setupUseCases(
   externalServices.youtubeSearchService,
   externalServices.multiSourceSearchService,
   externalServices.multiSourceDownloadService,
   spotifyService,
   externalServices.spotifyUserLibraryService,
+  coreServices.trackPostProcessingService,
 );
 
-const services = setupApplicationServices(spotifyService, useCases);
+const services = setupApplicationServices(useCases);
 
 const controllers = setupControllers(useCases, services, externalServices);
 

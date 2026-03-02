@@ -81,7 +81,10 @@ export class DownloadTrackUseCase {
 
       // Generate M3U if successful (NOW SAFE: track is marked as completed in DB)
       // This fixes the issue where the current track was missing from M3U
-      await this.trackPostProcessingService.updatePlaylistM3u(track.toPrimitive());
+      const trackPostProcessingService = this.getTrackPostProcessingServiceOrThrow(
+        track.toPrimitive(),
+      );
+      await trackPostProcessingService.updatePlaylistM3u(track.toPrimitive());
     }
 
     // Notify playlists have changed (track status affects playlist state)
@@ -94,6 +97,19 @@ export class DownloadTrackUseCase {
       logger.error(errorMsg);
       throw new AppError(400, "internal_server_error", errorMsg);
     }
+  }
+
+  private getTrackPostProcessingServiceOrThrow(track: ITrack): TrackPostProcessingService {
+    if (!this.trackPostProcessingService) {
+      const errorMsg =
+        "TrackPostProcessingService is undefined. This indicates a DI initialization order issue.";
+      logger.error(
+        `[DownloadTrackUseCase] ${errorMsg} trackId=${track.id ?? "unknown"} track=${track.artist} - ${track.name}`,
+      );
+      throw new AppError(500, "internal_server_error", errorMsg);
+    }
+
+    return this.trackPostProcessingService;
   }
 
   private async downloadAndProcessTrack(track: ITrack): Promise<void> {
@@ -114,7 +130,8 @@ export class DownloadTrackUseCase {
     logger.debug(
       `[DownloadTrackUseCase] Starting post-processing for ${track.artist} - ${track.name}`,
     );
-    await this.trackPostProcessingService.process(track, trackFilePath);
+    const trackPostProcessingService = this.getTrackPostProcessingServiceOrThrow(track);
+    await trackPostProcessingService.process(track, trackFilePath);
     logger.debug(
       `[DownloadTrackUseCase] Post-processing completed for ${track.artist} - ${track.name}`,
     );
