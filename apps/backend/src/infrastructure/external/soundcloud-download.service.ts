@@ -55,6 +55,7 @@ export class SoundCloudDownloadService {
         audioFormat: formatType,
         audioQuality: await this.settingsService.getString("YT_AUDIO_QUALITY"),
         output,
+        fixup: "force",
         headers: DEFAULT_EXTERNAL_HEADERS,
       });
       logger.info(
